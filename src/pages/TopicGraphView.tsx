@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toPng } from 'html-to-image';
-import AppShell from '@/components/layout/AppShell';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
 import Modal from '@/components/common/Modal';
@@ -164,16 +163,14 @@ export default function TopicGraphView() {
 
   if (!topic) {
     return (
-      <AppShell>
-        <div className="flex items-center justify-center h-full">
-          <p className="text-gray-500 dark:text-gray-400">Loading topic...</p>
-        </div>
-      </AppShell>
+      <div className="flex items-center justify-center h-full">
+        <p className="text-gray-500 dark:text-gray-400">Loading topic...</p>
+      </div>
     );
   }
 
   return (
-    <AppShell>
+    <>
       {/* Toolbar */}
       <div className="absolute top-0 left-0 right-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div className="flex items-center justify-between">
@@ -299,7 +296,7 @@ export default function TopicGraphView() {
           onClose={handleCloseVerseModal}
         />
       </Modal>
-    </AppShell>
+    </>
   );
 }
 
