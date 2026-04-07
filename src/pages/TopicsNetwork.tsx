@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ReactFlow,
@@ -13,9 +13,6 @@ import {
   BackgroundVariant,
   Handle,
   Position,
-  BaseEdge,
-  EdgeLabelRenderer,
-  getBezierPath,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -120,8 +117,8 @@ export default function TopicsNetwork() {
   }, [topics, navigate, loadSavedPositions]);
 
   // Initialize with empty arrays, then populate once data loads
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
 
   // Track if we've done initial setup
   const hasInitializedNodes = useRef(false);
