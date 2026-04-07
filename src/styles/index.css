@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* ReactFlow customizations */
+.react-flow__node {
+  cursor: pointer;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #6366f1;
+  border: 2px solid white;
+}
+
+.react-flow__handle:hover {
+  background-color: #4f46e5;
+}
+
+/* Verse node styles */
+.verse-node {
+  background: white;
+  border: 2px solid;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 200px;
+  max-width: 320px;
+  font-family: system-ui, -apple-system, sans-serif;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.verse-node:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.verse-node.selected {
+  box-shadow: 0 0 0 2px #6366f1, 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dark .verse-node {
+  background: #1f2937;
+  color: #f9fafb;
+}
+
+/* Topic node styles */
+.topic-node {
+  background: white;
+  border: 2px solid;
+  border-radius: 12px;
+  padding: 16px 24px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.topic-node:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.dark .topic-node {
+  background: #1f2937;
+  color: #f9fafb;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Offline banner animation */
+@keyframes slideIn {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.2s ease-out;
+}
+
+/* Mobile touch improvements */
+@media (pointer: coarse) {
+  .react-flow__handle {
+    width: 12px;
+    height: 12px;
+  }
+
+  .verse-node,
+  .topic-node {
+    user-select: none;
+    touch-action: none;
+  }
+}
+
+/* Safe area for notched phones */
+@supports (padding-top: env(safe-area-inset-top)) {
+  header {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Prevent pull-to-refresh on PWA */
+@supports (overscroll-behavior: none) {
+  body {
+    overscroll-behavior-y: none;
+  }
+}
