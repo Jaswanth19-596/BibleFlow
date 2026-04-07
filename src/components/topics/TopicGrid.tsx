@@ -6,9 +6,11 @@ interface TopicGridProps {
   loading: boolean;
   verseCounts: Record<string, number>;
   connectionCounts: Record<string, number>;
+  onEditTopic: (topic: Topic) => void;
+  onDeleteTopic: (topic: Topic) => void;
 }
 
-export default function TopicGrid({ topics, loading, verseCounts, connectionCounts }: TopicGridProps) {
+export default function TopicGrid({ topics, loading, verseCounts, connectionCounts, onEditTopic, onDeleteTopic }: TopicGridProps) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -65,6 +67,8 @@ export default function TopicGrid({ topics, loading, verseCounts, connectionCoun
           topic={topic}
           verseCount={verseCounts[topic.id] || 0}
           connectionCount={connectionCounts[topic.id] || 0}
+          onEdit={onEditTopic}
+          onDelete={onDeleteTopic}
         />
       ))}
     </div>

@@ -258,6 +258,7 @@ export default function TopicGraphView() {
             open={true}
             onClose={() => setEditingConnection(null)}
             onSave={handleSaveConnection}
+            onDelete={() => { if (editingConnection) { deleteConnection(editingConnection.id); setEditingConnection(null); } }}
             initialType={editingConnection.type}
             initialLabel={editingConnection.label}
           />

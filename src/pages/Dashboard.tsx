@@ -4,12 +4,18 @@ import { getVerseCountByTopic, getConnectionCountByTopic } from '@/lib/supabase'
 import TopicSearchBar from '@/components/topics/TopicSearchBar';
 import TopicGrid from '@/components/topics/TopicGrid';
 import NewTopicModal from '@/components/topics/NewTopicModal';
+import EditTopicModal from '@/components/topics/EditTopicModal';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Button from '@/components/common/Button';
+import { Topic } from '@/lib/types';
 
 export default function Dashboard() {
-  const { topics, loading, createTopic } = useTopics();
+  const { topics, loading, createTopic, updateTopic, deleteTopic } = useTopics();
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [verseCounts, setVerseCounts] = useState<Record<string, number>>({});
   const [connectionCounts, setConnectionCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(false);
@@ -53,6 +59,40 @@ export default function Dashboard() {
     await createTopic(data);
   };
 
+  const handleEditTopic = (topic: Topic) => {
+    setSelectedTopic(topic);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateTopic = async (data: { name: string; description: string; color: string }) => {
+    if (selectedTopic) {
+      await updateTopic(selectedTopic.id, data);
+    }
+  };
+
+  const handleDeleteTopic = (topic: Topic) => {
+    setSelectedTopic(topic);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (selectedTopic) {
+      await deleteTopic(selectedTopic.id);
+      setShowDeleteConfirm(false);
+      setSelectedTopic(null);
+    }
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setSelectedTopic(null);
+  };
+
+  const handleCloseDeleteConfirm = () => {
+    setShowDeleteConfirm(false);
+    setSelectedTopic(null);
+  };
+
   const isLoading = loading || countsLoading;
 
   return (
@@ -83,12 +123,31 @@ export default function Dashboard() {
         loading={isLoading}
         verseCounts={verseCounts}
         connectionCounts={connectionCounts}
+        onEditTopic={handleEditTopic}
+        onDeleteTopic={handleDeleteTopic}
       />
 
       <NewTopicModal
         open={showNewModal}
         onClose={() => setShowNewModal(false)}
         onSubmit={handleCreateTopic}
+      />
+
+      <EditTopicModal
+        open={showEditModal}
+        onClose={handleCloseEditModal}
+        onSubmit={handleUpdateTopic}
+        topic={selectedTopic}
+      />
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onClose={handleCloseDeleteConfirm}
+        onConfirm={handleConfirmDelete}
+        title="Delete Topic"
+        message={selectedTopic ? `Are you sure you want to delete "${selectedTopic.name}"? This will also delete all verses and connections within this topic.` : ''}
+        confirmText="Delete"
+        variant="danger"
       />
     </div>
   );
