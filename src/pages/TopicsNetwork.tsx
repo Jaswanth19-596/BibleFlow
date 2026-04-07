@@ -117,8 +117,8 @@ export default function TopicsNetwork() {
   }, [topics, navigate, loadSavedPositions]);
 
   // Initialize with empty arrays, then populate once data loads
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Track if we've done initial setup
   const hasInitializedNodes = useRef(false);
@@ -144,7 +144,7 @@ export default function TopicsNetwork() {
         style: { stroke: CROSS_TOPIC_COLOR, strokeWidth: 3, strokeDasharray: '5,5' },
         labelStyle: { fill: CROSS_TOPIC_COLOR, fontSize: 12, fontWeight: 500 },
         labelBgStyle: { fill: 'white', stroke: CROSS_TOPIC_COLOR, strokeWidth: 2, rx: 12 },
-        labelBgPadding: [8, 4],
+        labelBgPadding: [8, 4] as [number, number],
       }));
       setEdges(initialEdges);
       hasInitializedEdges.current = true;
@@ -174,7 +174,7 @@ export default function TopicsNetwork() {
           style: { stroke: CROSS_TOPIC_COLOR, strokeWidth: 3, strokeDasharray: '5,5' },
           labelStyle: { fill: CROSS_TOPIC_COLOR, fontSize: 12, fontWeight: 500 },
           labelBgStyle: { fill: 'white', stroke: CROSS_TOPIC_COLOR, strokeWidth: 2, rx: 12 },
-          labelBgPadding: [8, 4],
+          labelBgPadding: [8, 4] as [number, number],
         }));
 
       // Update labels for existing edges without recreating them
