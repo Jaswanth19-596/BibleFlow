@@ -30,7 +30,13 @@ export default function TopicGraphView() {
   const [editingTopicName, setEditingTopicName] = useState(false);
   const [topicName, setTopicName] = useState('');
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [editingConnection, setEditingConnection] = useState<{ id: string; type: ConnectionType; label: string | null } | null>(null);
+  const [editingConnection, setEditingConnection] = useState<{
+    id: string;
+    type: ConnectionType;
+    label: string | null;
+    anchor_word: string | null;
+    anchor_color: string | null;
+  } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [verseToDelete, setVerseToDelete] = useState<string | null>(null);
 
@@ -78,8 +84,15 @@ export default function TopicGraphView() {
   }, [verseToDelete, deleteVerse]);
 
   const handleCreateConnection = useCallback(
-    async (fromId: string, toId: string, type: ConnectionType) => {
-      await createConnection({ from_verse_id: fromId, to_verse_id: toId, type, label: null });
+    async (fromId: string, toId: string, type: ConnectionType, anchorWord?: string, anchorColor?: string) => {
+      await createConnection({
+        from_verse_id: fromId,
+        to_verse_id: toId,
+        type,
+        label: null,
+        anchor_word: anchorWord || null,
+        anchor_color: anchorColor || null,
+      });
     },
     [createConnection]
   );
@@ -92,6 +105,8 @@ export default function TopicGraphView() {
           id,
           type: updates.type || conn.type,
           label: updates.label !== undefined ? updates.label : conn.label,
+          anchor_word: conn.anchor_word,
+          anchor_color: conn.anchor_color,
         });
       }
     },
@@ -99,7 +114,12 @@ export default function TopicGraphView() {
   );
 
   const handleSaveConnection = useCallback(
-    async (data: { type: ConnectionType; label: string | null }) => {
+    async (data: {
+      type: ConnectionType;
+      label: string | null;
+      anchor_word: string | null;
+      anchor_color: string | null;
+    }) => {
       if (editingConnection) {
         await updateConnection(editingConnection.id, data);
         setEditingConnection(null);
@@ -261,6 +281,8 @@ export default function TopicGraphView() {
             onDelete={() => { if (editingConnection) { deleteConnection(editingConnection.id); setEditingConnection(null); } }}
             initialType={editingConnection.type}
             initialLabel={editingConnection.label}
+            initialAnchorWord={editingConnection.anchor_word}
+            initialAnchorColor={editingConnection.anchor_color}
           />
         </div>
       )}

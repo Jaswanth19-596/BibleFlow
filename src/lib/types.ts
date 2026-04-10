@@ -33,6 +33,8 @@ export interface Connection {
   to_verse_id: string;
   type: ConnectionType;
   label: string | null;
+  anchor_word: string | null;  // Word in the source verse that anchors this connection
+  anchor_color: string | null; // Highlight color for the anchored word and edge
   created_at: string;
 }
 

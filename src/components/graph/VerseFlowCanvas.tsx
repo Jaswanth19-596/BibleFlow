@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -17,13 +17,30 @@ import ConnectionEdgeComponent from './ConnectionEdge';
 import CrossTopicEdgeComponent from './CrossTopicEdge';
 import { Verse, Connection as ConnType, ConnectionType, TopicLink } from '@/lib/types';
 import { useDebouncedCallback } from '@/hooks/useDebounce';
+import { ANCHOR_COLOR_PALETTE } from '@/lib/edgeTypes';
+import type { AnchorHighlight } from './VerseNode';
+
+interface PendingAnchor {
+  verseId: string;
+  word: string;
+  color: string;
+}
 
 interface VerseFlowCanvasProps {
   verses: Verse[];
   connections: ConnType[];
   topicLinks: TopicLink[];
-  onCreateConnection: (from: string, to: string, type: ConnectionType) => void;
-  onUpdateConnection: (id: string, updates: { type?: ConnectionType; label?: string | null }) => void;
+  onCreateConnection: (
+    from: string,
+    to: string,
+    type: ConnectionType,
+    anchorWord?: string,
+    anchorColor?: string
+  ) => void;
+  onUpdateConnection: (
+    id: string,
+    updates: { type?: ConnectionType; label?: string | null }
+  ) => void;
   onDeleteConnection: (id: string) => void;
   onUpdateVersePosition: (id: string, x: number, y: number) => void;
   onVerseClick?: (verse: Verse) => void;
@@ -41,6 +58,22 @@ const edgeTypes = {
   crossTopic: CrossTopicEdgeComponent as any,
 };
 
+/** Build a map of verseId → established anchor highlights from currently loaded connections */
+function buildHighlightsMap(connections: ConnType[]): Map<string, AnchorHighlight[]> {
+  const map = new Map<string, AnchorHighlight[]>();
+  connections.forEach((c) => {
+    if (c.anchor_word && c.anchor_color) {
+      const list = map.get(c.from_verse_id) || [];
+      // Deduplicate by word — keep first occurrence
+      if (!list.find((h) => h.word === c.anchor_word)) {
+        list.push({ word: c.anchor_word, color: c.anchor_color });
+      }
+      map.set(c.from_verse_id, list);
+    }
+  });
+  return map;
+}
+
 export default function VerseFlowCanvas({
   verses,
   connections,
@@ -56,19 +89,60 @@ export default function VerseFlowCanvas({
 }: VerseFlowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
-  const initialNodes: Node[] = useMemo(
-    () =>
-      verses.map((verse) => ({
+  // ─── Word-anchor state ──────────────────────────────────────────────────────
+  const [pendingAnchor, setPendingAnchor] = useState<PendingAnchor | null>(null);
+
+  /** Handle word click in a verse node */
+  const handleWordClick = useCallback(
+    (verseId: string, word: string) => {
+      setPendingAnchor((prev) => {
+        // Toggle off if clicking the same verse + word
+        if (prev?.verseId === verseId && prev?.word === word) return null;
+
+        // Re-use existing anchor color if this word is already anchored
+        const existing = connections.find(
+          (c) => c.from_verse_id === verseId && c.anchor_word === word && c.anchor_color
+        );
+        if (existing?.anchor_color) {
+          return { verseId, word, color: existing.anchor_color };
+        }
+
+        // Pick next palette color based on how many anchors this verse already has
+        const anchoredCount = connections.filter(
+          (c) => c.from_verse_id === verseId && c.anchor_word
+        ).length;
+        const color = ANCHOR_COLOR_PALETTE[anchoredCount % ANCHOR_COLOR_PALETTE.length];
+        return { verseId, word, color };
+      });
+    },
+    [connections]
+  );
+
+  // ─── Node data builder ──────────────────────────────────────────────────────
+  const buildNodes = useCallback(
+    (verseList: Verse[], highlightsMap: Map<string, AnchorHighlight[]>): Node[] =>
+      verseList.map((verse) => ({
         id: verse.id,
         type: 'verse',
         position: { x: verse.position_x, y: verse.position_y },
-        data: { verse, onClick: onVerseClick, onDoubleClick: onVerseDoubleClick },
+        data: {
+          verse,
+          onClick: onVerseClick,
+          onDoubleClick: onVerseDoubleClick,
+          connectionHighlights: highlightsMap.get(verse.id) || [],
+          pendingAnchorWord:
+            pendingAnchor?.verseId === verse.id ? pendingAnchor.word : null,
+          pendingAnchorColor:
+            pendingAnchor?.verseId === verse.id ? pendingAnchor.color : null,
+          onWordClick: handleWordClick,
+        },
         selected: verse.id === highlightedVerseId,
       })),
-    [verses, highlightedVerseId, onVerseClick, onVerseDoubleClick]
+    [onVerseClick, onVerseDoubleClick, pendingAnchor, handleWordClick, highlightedVerseId]
   );
 
-  const initialEdges: Edge[] = useMemo(() => {
+  // ─── Edge data builder ──────────────────────────────────────────────────────
+  const buildEdges = useCallback((): Edge[] => {
     const connEdges: Edge[] = connections.map((c) => ({
       id: c.id,
       source: c.from_verse_id,
@@ -77,6 +151,8 @@ export default function VerseFlowCanvas({
       data: {
         type: c.type,
         label: c.label,
+        anchor_word: c.anchor_word,
+        anchor_color: c.anchor_color,
         onEdit: onUpdateConnection,
         onDelete: onDeleteConnection,
       },
@@ -96,52 +172,29 @@ export default function VerseFlowCanvas({
     return [...connEdges, ...linkEdges];
   }, [connections, topicLinks, onUpdateConnection, onDeleteConnection, onCrossTopicLinkClick]);
 
+  // ─── React Flow state ───────────────────────────────────────────────────────
+  const initialHighlightsMap = useMemo(() => buildHighlightsMap(connections), [connections]);
+  const initialNodes = useMemo(
+    () => buildNodes(verses, initialHighlightsMap),
+    [verses, initialHighlightsMap, buildNodes]
+  );
+  const initialEdges = useMemo(() => buildEdges(), [buildEdges]);
+
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Update nodes when verses change
+  // Sync nodes when verses / connections / pendingAnchor change
   useEffect(() => {
-    setNodes(
-      verses.map((verse) => ({
-        id: verse.id,
-        type: 'verse',
-        position: { x: verse.position_x, y: verse.position_y },
-        data: { verse, onClick: onVerseClick, onDoubleClick: onVerseDoubleClick },
-        selected: verse.id === highlightedVerseId,
-      }))
-    );
-  }, [verses, highlightedVerseId, onVerseClick, onVerseDoubleClick, setNodes]);
+    const highlightsMap = buildHighlightsMap(connections);
+    setNodes(buildNodes(verses, highlightsMap));
+  }, [verses, connections, buildNodes, setNodes]);
 
-  // Update edges when connections/topicLinks change
+  // Sync edges when connections / topicLinks change
   useEffect(() => {
-    const connEdges: Edge[] = connections.map((c) => ({
-      id: c.id,
-      source: c.from_verse_id,
-      target: c.to_verse_id,
-      type: 'connection',
-      data: {
-        type: c.type,
-        label: c.label,
-        onEdit: onUpdateConnection,
-        onDelete: onDeleteConnection,
-      },
-    }));
+    setEdges(buildEdges());
+  }, [buildEdges, setEdges]);
 
-    const linkEdges: Edge[] = topicLinks.map((link) => ({
-      id: `cross-${link.id}`,
-      source: link.from_topic_id,
-      target: link.to_topic_id,
-      type: 'crossTopic',
-      data: {
-        description: link.description,
-        onClick: onCrossTopicLinkClick,
-      },
-    }));
-
-    setEdges([...connEdges, ...linkEdges]);
-  }, [connections, topicLinks, onUpdateConnection, onDeleteConnection, onCrossTopicLinkClick, setEdges]);
-
-  // Debounced position save
+  // ─── Interaction handlers ───────────────────────────────────────────────────
   const debouncedSavePosition = useDebouncedCallback(
     (nodeId: string, x: number, y: number) => {
       onUpdateVersePosition(nodeId, x, y);
@@ -161,10 +214,21 @@ export default function VerseFlowCanvas({
   const onConnect = useCallback(
     (params: Connection) => {
       if (params.source && params.target) {
-        onCreateConnection(params.source, params.target, 'references');
+        // Attach anchor if the dragged connection starts from the anchored verse
+        const anchor =
+          pendingAnchor?.verseId === params.source ? pendingAnchor : null;
+        onCreateConnection(
+          params.source,
+          params.target,
+          'references',
+          anchor?.word,
+          anchor?.color
+        );
+        // Clear pending anchor after the connection is made
+        if (anchor) setPendingAnchor(null);
       }
     },
-    [onCreateConnection]
+    [onCreateConnection, pendingAnchor]
   );
 
   const onEdgeClick = useCallback(
@@ -202,6 +266,36 @@ export default function VerseFlowCanvas({
         <Controls />
         <MiniMap nodeStrokeWidth={3} zoomable pannable />
       </ReactFlow>
+
+      {/* Global pending-anchor hint bar */}
+      {pendingAnchor && (
+        <div
+          className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium shadow-lg pointer-events-none z-20"
+          style={{
+            backgroundColor: pendingAnchor.color + '18',
+            border: `1.5px solid ${pendingAnchor.color}`,
+            color: pendingAnchor.color,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <svg
+            className="w-4 h-4 flex-shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+            />
+          </svg>
+          <span>
+            Word &ldquo;<strong>{pendingAnchor.word}</strong>&rdquo; anchored — drag a handle to link a verse
+          </span>
+        </div>
+      )}
     </div>
   );
 }

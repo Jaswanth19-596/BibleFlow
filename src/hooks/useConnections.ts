@@ -46,8 +46,15 @@ export function useConnections(topicId: string | undefined) {
   }, [fetchConnections, topicId]);
 
   const create = useCallback(
-    async (conn: { from_verse_id: string; to_verse_id: string; type: ConnectionType; label: string | null }) => {
-      const newConn = await createConnection(conn);
+    async (conn: {
+      from_verse_id: string;
+      to_verse_id: string;
+      type: ConnectionType;
+      label: string | null;
+      anchor_word?: string | null;
+      anchor_color?: string | null;
+    }) => {
+      const newConn = await createConnection(conn as any);
       setConnections(prev => [...prev, newConn]);
       return newConn;
     },

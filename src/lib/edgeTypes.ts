@@ -25,3 +25,15 @@ export const VERSE_TYPE_COLORS = {
   contrast: '#ef4444',
   context: '#6b7280',
 } as const;
+
+// Color palette for word anchors — distinct from edge type colors
+export const ANCHOR_COLOR_PALETTE = [
+  '#8b5cf6', // violet
+  '#f59e0b', // amber
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#f97316', // orange
+  '#06b6d4', // cyan
+  '#84cc16', // lime
+  '#e879f9', // fuchsia
+];
