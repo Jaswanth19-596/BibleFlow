@@ -134,8 +134,11 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
       onClick={() => data.onClick?.(verse)}
       onDoubleClick={() => data.onDoubleClick?.(verse)}
     >
-      <Handle type="target" position={Position.Top} />
-      <Handle type="target" position={Position.Left} />
+      {/* All 4 sides have both source and target handles for flexible connections */}
+      <Handle type="target" position={Position.Top} id="target-top" />
+      <Handle type="source" position={Position.Top} id="source-top" />
+      <Handle type="target" position={Position.Left} id="target-left" />
+      <Handle type="source" position={Position.Left} id="source-left" />
 
       {/* Header: Verse reference + Type badge */}
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -196,8 +199,10 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
         </div>
       )}
 
-      <Handle type="source" position={Position.Bottom} />
-      <Handle type="source" position={Position.Right} />
+      <Handle type="target" position={Position.Bottom} id="target-bottom" />
+      <Handle type="source" position={Position.Bottom} id="source-bottom" />
+      <Handle type="target" position={Position.Right} id="target-right" />
+      <Handle type="source" position={Position.Right} id="source-right" />
     </div>
   );
 }

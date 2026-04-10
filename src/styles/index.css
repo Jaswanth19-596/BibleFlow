@@ -31,10 +31,29 @@ html, body, #root {
   border-radius: 50%;
   background-color: #6366f1;
   border: 2px solid white;
+  opacity: 0.5;
+  transition: opacity 0.15s, transform 0.15s, background-color 0.15s;
+}
+
+.react-flow__node:hover .react-flow__handle {
+  opacity: 1;
+  transform: scale(1.3);
 }
 
 .react-flow__handle:hover {
   background-color: #4f46e5;
+  opacity: 1;
+  transform: scale(1.5);
+}
+
+/* Offset source handles slightly so they don't fully overlap target handles */
+.react-flow__handle[data-handleid^="source-top"],
+.react-flow__handle[data-handleid^="source-bottom"] {
+  left: calc(50% + 10px);
+}
+.react-flow__handle[data-handleid^="source-left"],
+.react-flow__handle[data-handleid^="source-right"] {
+  top: calc(50% + 10px);
 }
 
 /* Verse node styles */

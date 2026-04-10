@@ -7,6 +7,7 @@ import {
   Node,
   Edge,
   Connection,
+  ConnectionMode,
   useNodesState,
   useEdgesState,
   BackgroundVariant,
@@ -72,6 +73,32 @@ function buildHighlightsMap(connections: ConnType[]): Map<string, AnchorHighligh
     }
   });
   return map;
+}
+
+/** Compute the closest pair of handles between two nodes based on their positions. */
+function getOptimalHandles(source: Verse | undefined, target: Verse | undefined) {
+  if (!source || !target) return { sourceHandle: 'source-bottom', targetHandle: 'target-top' };
+  
+  // Approximate center of a standard verse node
+  const sx = source.position_x + 130;
+  const sy = source.position_y + 80;
+  const tx = target.position_x + 130;
+  const ty = target.position_y + 80;
+
+  const dx = tx - sx;
+  const dy = ty - sy;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    // Horizontal connection
+    return dx > 0
+      ? { sourceHandle: 'source-right', targetHandle: 'target-left' }
+      : { sourceHandle: 'source-left', targetHandle: 'target-right' };
+  } else {
+    // Vertical connection
+    return dy > 0
+      ? { sourceHandle: 'source-bottom', targetHandle: 'target-top' }
+      : { sourceHandle: 'source-top', targetHandle: 'target-bottom' };
+  }
 }
 
 export default function VerseFlowCanvas({
@@ -142,21 +169,31 @@ export default function VerseFlowCanvas({
   );
 
   // ─── Edge data builder ──────────────────────────────────────────────────────
-  const buildEdges = useCallback((): Edge[] => {
-    const connEdges: Edge[] = connections.map((c) => ({
-      id: c.id,
-      source: c.from_verse_id,
-      target: c.to_verse_id,
-      type: 'connection',
-      data: {
-        type: c.type,
-        label: c.label,
-        anchor_word: c.anchor_word,
-        anchor_color: c.anchor_color,
-        onEdit: onUpdateConnection,
-        onDelete: onDeleteConnection,
-      },
-    }));
+  const buildEdges = useCallback((verseList: Verse[]): Edge[] => {
+    const verseMap = new Map(verseList.map((v) => [v.id, v]));
+
+    const connEdges: Edge[] = connections.map((c) => {
+      const sourceVerse = verseMap.get(c.from_verse_id);
+      const targetVerse = verseMap.get(c.to_verse_id);
+      const { sourceHandle, targetHandle } = getOptimalHandles(sourceVerse, targetVerse);
+
+      return {
+        id: c.id,
+        source: c.from_verse_id,
+        target: c.to_verse_id,
+        sourceHandle,
+        targetHandle,
+        type: 'connection',
+        data: {
+          type: c.type,
+          label: c.label,
+          anchor_word: c.anchor_word,
+          anchor_color: c.anchor_color,
+          onEdit: onUpdateConnection,
+          onDelete: onDeleteConnection,
+        },
+      };
+    });
 
     const linkEdges: Edge[] = topicLinks.map((link) => ({
       id: `cross-${link.id}`,
@@ -178,7 +215,7 @@ export default function VerseFlowCanvas({
     () => buildNodes(verses, initialHighlightsMap),
     [verses, initialHighlightsMap, buildNodes]
   );
-  const initialEdges = useMemo(() => buildEdges(), [buildEdges]);
+  const initialEdges = useMemo(() => buildEdges(verses), [buildEdges, verses]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -191,8 +228,8 @@ export default function VerseFlowCanvas({
 
   // Sync edges when connections / topicLinks change
   useEffect(() => {
-    setEdges(buildEdges());
-  }, [buildEdges, setEdges]);
+    setEdges(buildEdges(verses));
+  }, [buildEdges, verses, setEdges]);
 
   // ─── Interaction handlers ───────────────────────────────────────────────────
   const debouncedSavePosition = useDebouncedCallback(
@@ -253,6 +290,7 @@ export default function VerseFlowCanvas({
         onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        connectionMode={ConnectionMode.Loose}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
