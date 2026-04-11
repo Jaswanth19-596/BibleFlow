@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Topic } from '@/lib/types';
+import { formatDate } from '@/lib/utils';
 
 interface TopicCardProps {
   topic: Topic;
@@ -13,11 +14,6 @@ interface TopicCardProps {
 export default function TopicCard({ topic, verseCount, connectionCount, onEdit, onDelete }: TopicCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

@@ -6,7 +6,7 @@ import {
   updateVerse,
   updateVersePosition,
   deleteVerse,
-  subscribeToTopic,
+  subscribeToTopicVerses,
 } from '@/lib/supabase';
 
 export function useVerses(topicId: string | undefined) {
@@ -37,7 +37,7 @@ export function useVerses(topicId: string | undefined) {
 
     if (!topicId) return;
 
-    const channel = subscribeToTopic(topicId, () => {
+    const channel = subscribeToTopicVerses(topicId, () => {
       fetchVerses();
     });
 

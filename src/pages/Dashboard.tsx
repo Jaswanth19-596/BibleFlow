@@ -23,21 +23,33 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchCounts = async () => {
       setCountsLoading(true);
-      const verse: Record<string, number> = {};
-      const conn: Record<string, number> = {};
+      
+      try {
+        const results = await Promise.all(
+          topics.map(async (topic) => {
+            const [vCount, cCount] = await Promise.all([
+              getVerseCountByTopic(topic.id),
+              getConnectionCountByTopic(topic.id),
+            ]);
+            return { id: topic.id, vCount, cCount };
+          })
+        );
 
-      for (const topic of topics) {
-        const [vCount, cCount] = await Promise.all([
-          getVerseCountByTopic(topic.id),
-          getConnectionCountByTopic(topic.id),
-        ]);
-        verse[topic.id] = vCount;
-        conn[topic.id] = cCount;
+        const verse: Record<string, number> = {};
+        const conn: Record<string, number> = {};
+        
+        results.forEach(({ id, vCount, cCount }) => {
+          verse[id] = vCount;
+          conn[id] = cCount;
+        });
+
+        setVerseCounts(verse);
+        setConnectionCounts(conn);
+      } catch (err) {
+        console.error('Failed to fetch topic counts', err);
+      } finally {
+        setCountsLoading(false);
       }
-
-      setVerseCounts(verse);
-      setConnectionCounts(conn);
-      setCountsLoading(false);
     };
 
     if (topics.length > 0) {

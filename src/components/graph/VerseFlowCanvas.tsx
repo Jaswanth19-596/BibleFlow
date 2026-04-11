@@ -11,6 +11,8 @@ import {
   useNodesState,
   useEdgesState,
   BackgroundVariant,
+  NodeTypes,
+  EdgeTypes,
 } from '@xyflow/react';
 
 import VerseNode from './VerseNode';
@@ -50,13 +52,13 @@ interface VerseFlowCanvasProps {
   highlightedVerseId?: string | null;
 }
 
-const nodeTypes = {
-  verse: VerseNode as any,
+const nodeTypes: NodeTypes = {
+  verse: VerseNode,
 };
 
-const edgeTypes = {
-  connection: ConnectionEdgeComponent as any,
-  crossTopic: CrossTopicEdgeComponent as any,
+const edgeTypes: EdgeTypes = {
+  connection: ConnectionEdgeComponent,
+  crossTopic: CrossTopicEdgeComponent,
 };
 
 /** Build a map of verseId → established anchor highlights from currently loaded connections */

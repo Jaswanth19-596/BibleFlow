@@ -233,28 +233,29 @@ export async function getConnectionCountByTopic(topicId: string): Promise<number
 }
 
 // Real-time subscriptions
-// Remove existing channel first to prevent "already subscribed" errors
-export function subscribeToTopic(topicId: string, callback: () => void) {
-  const channelName = `topic-${topicId}`;
-  supabase.removeChannel(supabase.channel(channelName));
-  const channel = supabase.channel(channelName)
+export function subscribeToTopicVerses(topicId: string, callback: () => void) {
+  const channel = supabase.channel(`verses-${topicId}-${Math.random().toString(36).substring(7)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'verses', filter: `topic_id=eq.${topicId}` }, callback)
+    .subscribe();
+  return channel;
+}
+
+export function subscribeToTopicConnections(callback: () => void) {
+  const channel = supabase.channel(`connections-${Math.random().toString(36).substring(7)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, callback)
     .subscribe();
   return channel;
 }
 
 export function subscribeToTopics(callback: () => void) {
-  supabase.removeChannel(supabase.channel('topics'));
-  const channel = supabase.channel('topics')
+  const channel = supabase.channel(`topics-${Math.random().toString(36).substring(7)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'topics' }, callback)
     .subscribe();
   return channel;
 }
 
 export function subscribeToTopicLinks(callback: () => void) {
-  supabase.removeChannel(supabase.channel('topic_links'));
-  const channel = supabase.channel('topic_links')
+  const channel = supabase.channel(`topic_links-${Math.random().toString(36).substring(7)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'topic_links' }, callback)
     .subscribe();
   return channel;

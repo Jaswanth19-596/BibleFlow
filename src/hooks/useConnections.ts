@@ -5,7 +5,7 @@ import {
   createConnection,
   updateConnection,
   deleteConnection,
-  subscribeToTopic,
+  subscribeToTopicConnections,
 } from '@/lib/supabase';
 
 export function useConnections(topicId: string | undefined) {
@@ -36,7 +36,9 @@ export function useConnections(topicId: string | undefined) {
 
     if (!topicId) return;
 
-    const channel = subscribeToTopic(topicId, () => {
+    // Connections don't store topicId, so we listen for any connection changes
+    // and rely on fetchConnections to pull only those relevant to current verses
+    const channel = subscribeToTopicConnections(() => {
       fetchConnections();
     });
 
@@ -54,7 +56,11 @@ export function useConnections(topicId: string | undefined) {
       anchor_word?: string | null;
       anchor_color?: string | null;
     }) => {
-      const newConn = await createConnection(conn as any);
+      const newConn = await createConnection({
+        ...conn,
+        anchor_word: conn.anchor_word ?? null,
+        anchor_color: conn.anchor_color ?? null,
+      });
       setConnections(prev => [...prev, newConn]);
       return newConn;
     },
