@@ -1,44 +1,26 @@
-// Local KJV Database access
-// Reads from /kjv.json and caches in memory
+let worker: Worker | null = null;
+let currentJobId = 0;
+const pendingJobs = new Map<number, { resolve: (val: any) => void; reject: (err: any) => void }>();
 
-export interface LocalKjvVerse {
-  book_name: string;
-  book: number;
-  chapter: number;
-  verse: number;
-  text: string;
-}
-
-export interface LocalKjvData {
-  metadata: any;
-  verses: LocalKjvVerse[];
-}
-
-let kjvCache: LocalKjvData | null = null;
-let kjvFetchPromise: Promise<LocalKjvData | null> | null = null;
-
-async function getKjvData(): Promise<LocalKjvData | null> {
-  if (kjvCache) return kjvCache;
-  
-  // Prevent duplicate concurrent requests during initial load
-  if (!kjvFetchPromise) {
-    kjvFetchPromise = fetch('/kjv.json')
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to load kjv.json');
-        return res.json();
-      })
-      .then(data => {
-        kjvCache = data;
-        return data;
-      })
-      .catch(error => {
-        console.error('Failed to load local KJV json', error);
-        kjvFetchPromise = null;
-        return null;
-      });
+function initWorker() {
+  if (!worker) {
+    // Note: In Vite, Web Workers are instantiated using this specific syntax
+    worker = new Worker(new URL('./bibleWorker.ts', import.meta.url), { type: 'module' });
+    
+    worker.onmessage = (e: MessageEvent) => {
+      const { jobId, result, error } = e.data;
+      const job = pendingJobs.get(jobId);
+      if (job) {
+        if (error) {
+          job.reject(new Error(error));
+        } else {
+          job.resolve(result);
+        }
+        pendingJobs.delete(jobId);
+      }
+    };
   }
-  
-  return kjvFetchPromise;
+  return worker;
 }
 
 export async function fetchKjvVerse(book: string, chapter: number, verse: number): Promise<string | null> {
@@ -51,23 +33,15 @@ export async function fetchKjvVerseRange(
   verseStart: number,
   verseEnd: number | null
 ): Promise<string | null> {
-  const data = await getKjvData();
-  if (!data || !data.verses) return null;
+  const w = initWorker();
+  const jobId = currentJobId++;
 
-  const bookLower = book.toLowerCase();
-  const endV = verseEnd && verseEnd >= verseStart ? verseEnd : verseStart;
-
-  const foundVerses = data.verses.filter(v =>
-    v.book_name.toLowerCase() === bookLower &&
-    v.chapter === chapter &&
-    v.verse >= verseStart &&
-    v.verse <= endV
-  );
-
-  if (foundVerses.length > 0) {
-    // Strip leading paragraph markers (¶) often found in KJV datasets
-    return foundVerses.map(v => v.text.replace(/^[¶\s]+/, '')).join(' ');
-  }
-
-  return null;
+  return new Promise((resolve, reject) => {
+    pendingJobs.set(jobId, { resolve, reject });
+    w.postMessage({
+      jobId,
+      type: 'fetchKjvVerseRange',
+      payload: { book, chapter, verseStart, verseEnd }
+    });
+  });
 }

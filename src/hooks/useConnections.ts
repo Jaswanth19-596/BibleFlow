@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Connection, ConnectionType } from '@/lib/types';
 import {
   getConnectionsByTopic,
@@ -9,46 +10,21 @@ import {
 } from '@/lib/supabase';
 
 export function useConnections(topicId: string | undefined) {
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchConnections = useCallback(async () => {
-    if (!topicId) {
-      setConnections([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const data = await getConnectionsByTopic(topicId);
-      setConnections(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch connections');
-    } finally {
-      setLoading(false);
-    }
-  }, [topicId]);
+  const {
+    data: connections = [],
+    isLoading: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['connections', topicId],
+    queryFn: () => getConnectionsByTopic(topicId!),
+    enabled: !!topicId,
+  });
 
-  useEffect(() => {
-    fetchConnections();
-
-    if (!topicId) return;
-
-    // Connections don't store topicId, so we listen for any connection changes
-    // and rely on fetchConnections to pull only those relevant to current verses
-    const channel = subscribeToTopicConnections(() => {
-      fetchConnections();
-    });
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [fetchConnections, topicId]);
-
-  const create = useCallback(
-    async (conn: {
+  const createMutation = useMutation({
+    mutationFn: async (conn: {
       from_verse_id: string;
       to_verse_id: string;
       type: ConnectionType;
@@ -56,35 +32,50 @@ export function useConnections(topicId: string | undefined) {
       anchor_word?: string | null;
       anchor_color?: string | null;
     }) => {
-      const newConn = await createConnection({
+      return createConnection({
         ...conn,
         anchor_word: conn.anchor_word ?? null,
         anchor_color: conn.anchor_color ?? null,
       });
-      setConnections(prev => [...prev, newConn]);
-      return newConn;
     },
-    []
-  );
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connections', topicId] });
+    },
+  });
 
-  const update = useCallback(async (id: string, updates: Partial<Omit<Connection, 'id' | 'created_at'>>) => {
-    const updated = await updateConnection(id, updates);
-    setConnections(prev => prev.map(c => c.id === id ? updated : c));
-    return updated;
-  }, []);
+  const updateMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Omit<Connection, 'id' | 'created_at'>> }) => updateConnection(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connections', topicId] });
+    },
+  });
 
-  const remove = useCallback(async (id: string) => {
-    await deleteConnection(id);
-    setConnections(prev => prev.filter(c => c.id !== id));
-  }, []);
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteConnection(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connections', topicId] });
+    },
+  });
+
+  useEffect(() => {
+    if (!topicId) return;
+
+    const channel = subscribeToTopicConnections(() => {
+      queryClient.invalidateQueries({ queryKey: ['connections', topicId] });
+    });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [topicId, queryClient]);
 
   return {
     connections,
     loading,
-    error,
-    createConnection: create,
-    updateConnection: update,
-    deleteConnection: remove,
-    refetch: fetchConnections,
+    error: error instanceof Error ? error.message : (error as string | null),
+    createConnection: createMutation.mutateAsync,
+    updateConnection: (id: string, updates: Partial<Omit<Connection, 'id' | 'created_at'>>) => updateMutation.mutateAsync({ id, updates }),
+    deleteConnection: deleteMutation.mutateAsync,
+    refetch,
   };
 }

@@ -1,61 +1,59 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Topic } from '@/lib/types';
 import { getTopics, createTopic, updateTopic, deleteTopic, subscribeToTopics } from '@/lib/supabase';
 
 export function useTopics() {
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchTopics = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await getTopics();
-      setTopics(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch topics');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data: topics = [],
+    isLoading: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['topics'],
+    queryFn: getTopics,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (topic: { name: string; description: string; color: string }) => createTopic(topic),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Omit<Topic, 'id' | 'created_at'>> }) => updateTopic(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteTopic(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
+    },
+  });
 
   useEffect(() => {
-    fetchTopics();
-
     const channel = subscribeToTopics(() => {
-      fetchTopics();
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
     });
 
     return () => {
       channel.unsubscribe();
     };
-  }, [fetchTopics]);
-
-  const create = useCallback(async (topic: { name: string; description: string; color: string }) => {
-    const newTopic = await createTopic(topic);
-    setTopics(prev => [newTopic, ...prev]);
-    return newTopic;
-  }, []);
-
-  const update = useCallback(async (id: string, updates: Partial<Omit<Topic, 'id' | 'created_at'>>) => {
-    const updated = await updateTopic(id, updates);
-    setTopics(prev => prev.map(t => t.id === id ? updated : t));
-    return updated;
-  }, []);
-
-  const remove = useCallback(async (id: string) => {
-    await deleteTopic(id);
-    setTopics(prev => prev.filter(t => t.id !== id));
-  }, []);
+  }, [queryClient]);
 
   return {
     topics,
     loading,
-    error,
-    createTopic: create,
-    updateTopic: update,
-    deleteTopic: remove,
-    refetch: fetchTopics,
+    error: error instanceof Error ? error.message : (error as string | null),
+    createTopic: createMutation.mutateAsync,
+    updateTopic: (id: string, updates: Partial<Omit<Topic, 'id' | 'created_at'>>) => updateMutation.mutateAsync({ id, updates }),
+    deleteTopic: deleteMutation.mutateAsync,
+    refetch,
   };
 }
