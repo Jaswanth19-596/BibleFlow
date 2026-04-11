@@ -63,7 +63,7 @@ export function useVerses(topicId: string | undefined) {
       }
       return { previousVerses };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       if (context?.previousVerses) {
         queryClient.setQueryData(['verses', topicId], context.previousVerses);
       }
