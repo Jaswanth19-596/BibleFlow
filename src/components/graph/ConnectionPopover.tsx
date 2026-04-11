@@ -4,6 +4,7 @@ import Select from '@/components/common/Select';
 import Input from '@/components/common/Input';
 import { ConnectionType } from '@/lib/types';
 import { ANCHOR_COLOR_PALETTE } from '@/lib/edgeTypes';
+import { parseAnchorKey } from '@/lib/utils';
 
 interface ConnectionPopoverProps {
   open: boolean;
@@ -119,7 +120,7 @@ export default function ConnectionPopover({
                       className="text-sm font-semibold italic truncate"
                       style={{ color: anchorColor || '#8b5cf6' }}
                     >
-                      &ldquo;{anchorWord}&rdquo;
+                      &ldquo;{parseAnchorKey(anchorWord)?.word || anchorWord}&rdquo;
                     </span>
                   </div>
                   <button

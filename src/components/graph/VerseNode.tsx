@@ -3,6 +3,7 @@ import { Handle, Position } from '@xyflow/react';
 import { Verse } from '@/lib/types';
 import { formatVerseRef } from '@/lib/bibleBooks';
 import { VERSE_TYPE_COLORS } from '@/lib/edgeTypes';
+import { parseAnchorKey, buildAnchorKey } from '@/lib/utils';
 
 export interface AnchorHighlight {
   word: string;  // lowercase, stripped of leading/trailing punctuation
@@ -13,8 +14,8 @@ interface VerseNodeData {
   verse: Verse;
   onClick?: (verse: Verse) => void;
   onDoubleClick?: (verse: Verse) => void;
-  connectionHighlights?: AnchorHighlight[];  // established anchors from DB
-  pendingAnchorWord?: string | null;         // word selected but not yet connected
+  connectionHighlights?: AnchorHighlight[];  // established anchors from DB (raw anchorKey strings stored in 'word')
+  pendingAnchorWord?: string | null;         // word anchor key selected but not yet connected
   pendingAnchorColor?: string | null;
   onWordClick?: (verseId: string, word: string) => void;
 }
@@ -37,13 +38,13 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
   const verseRef = formatVerseRef(verse.book, verse.chapter, verse.verse_start, verse.verse_end);
 
   const highlights = data.connectionHighlights || [];
-  const pendingWord = data.pendingAnchorWord ?? null;
+  const pendingAnchorKey = data.pendingAnchorWord ?? null;
   const pendingColor = data.pendingAnchorColor ?? null;
 
   const handleWordClick = useCallback(
-    (e: React.MouseEvent, word: string) => {
+    (e: React.MouseEvent, anchorKey: string) => {
       e.stopPropagation(); // don't open verse sidebar
-      if (word) data.onWordClick?.(verse.id, word);
+      if (anchorKey) data.onWordClick?.(verse.id, anchorKey);
     },
     [data, verse.id]
   );
@@ -51,6 +52,7 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
   const renderVerseText = (text: string) => {
     // Split preserving whitespace tokens
     const tokens = text.split(/(\s+)/);
+    const wordCounts = new Map<string, number>();
 
     return tokens.map((token, i) => {
       // Preserve raw whitespace as-is
@@ -61,8 +63,21 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
       const clean = cleanWord(token);
       if (!clean) return <span key={i}>{token}</span>;
 
-      const isPending = pendingWord === clean;
-      const highlight = highlights.find(h => h.word === clean);
+      const occurrence = wordCounts.get(clean) || 0;
+      wordCounts.set(clean, occurrence + 1);
+
+      const anchorKey = buildAnchorKey(clean, occurrence);
+      const isPending = pendingAnchorKey === anchorKey || pendingAnchorKey === clean; // match pure format for legacy pending
+      
+      const highlight = highlights.find(h => {
+        const parsed = parseAnchorKey(h.word);
+        if (!parsed) return false;
+        // if legacy anchor (-1), match all instances of the word. Otherwise exact match index and word.
+        if (parsed.index === -1) {
+          return parsed.word === clean;
+        }
+        return parsed.index === occurrence && parsed.word === clean;
+      });
 
       // Pending anchor (user clicked this word, not yet linked)
       if (isPending) {
@@ -77,7 +92,7 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
               fontWeight: 600,
               padding: '0 2px',
             }}
-            onClick={(e) => handleWordClick(e, clean)}
+            onClick={(e) => handleWordClick(e, anchorKey)}
             title="Pending anchor — drag a handle to link a verse, or click to deselect"
           >
             {token}
@@ -98,7 +113,7 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
               fontWeight: 600,
               padding: '0 2px',
             }}
-            onClick={(e) => handleWordClick(e, clean)}
+            onClick={(e) => handleWordClick(e, anchorKey)}
             title={`Word anchored to connection — click to re-anchor`}
           >
             {token}
@@ -107,7 +122,7 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
       }
 
       // Regular word — hoverable to hint clickability
-      const isHovered = hoveredWord === clean;
+      const isHovered = hoveredWord === anchorKey;
       return (
         <span
           key={i}
@@ -116,8 +131,8 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
               ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
               : ''
           }`}
-          onClick={(e) => handleWordClick(e, clean)}
-          onMouseEnter={() => setHoveredWord(clean)}
+          onClick={(e) => handleWordClick(e, anchorKey)}
+          onMouseEnter={() => setHoveredWord(anchorKey)}
           onMouseLeave={() => setHoveredWord(null)}
           title="Click to anchor this word when creating a connection"
         >
@@ -164,7 +179,7 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
       )}
 
       {/* Pending anchor badge */}
-      {pendingWord && (
+      {pendingAnchorKey && (
         <div
           className="mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium"
           style={{
@@ -186,7 +201,7 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
               d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
             />
           </svg>
-          <span>&ldquo;{pendingWord}&rdquo; — drag handle to link</span>
+          <span>&ldquo;{parseAnchorKey(pendingAnchorKey)?.word || pendingAnchorKey}&rdquo; — drag handle to link</span>
         </div>
       )}
 

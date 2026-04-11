@@ -22,10 +22,11 @@ import { Verse, Connection as ConnType, ConnectionType, TopicLink } from '@/lib/
 import { useDebouncedCallback } from '@/hooks/useDebounce';
 import { ANCHOR_COLOR_PALETTE } from '@/lib/edgeTypes';
 import type { AnchorHighlight } from './VerseNode';
+import { parseAnchorKey } from '@/lib/utils';
 
 interface PendingAnchor {
   verseId: string;
-  word: string;
+  word: string; // This holds the anchor_key format e.g. "0:the"
   color: string;
 }
 
@@ -67,7 +68,7 @@ function buildHighlightsMap(connections: ConnType[]): Map<string, AnchorHighligh
   connections.forEach((c) => {
     if (c.anchor_word && c.anchor_color) {
       const list = map.get(c.from_verse_id) || [];
-      // Deduplicate by word — keep first occurrence
+      // Deduplicate by word key — keep first occurrence
       if (!list.find((h) => h.word === c.anchor_word)) {
         list.push({ word: c.anchor_word, color: c.anchor_color });
       }
@@ -123,17 +124,17 @@ export default function VerseFlowCanvas({
 
   /** Handle word click in a verse node */
   const handleWordClick = useCallback(
-    (verseId: string, word: string) => {
+    (verseId: string, wordKey: string) => {
       setPendingAnchor((prev) => {
-        // Toggle off if clicking the same verse + word
-        if (prev?.verseId === verseId && prev?.word === word) return null;
+        // Toggle off if clicking the same verse + wordKey
+        if (prev?.verseId === verseId && prev?.word === wordKey) return null;
 
         // Re-use existing anchor color if this word is already anchored
         const existing = connections.find(
-          (c) => c.from_verse_id === verseId && c.anchor_word === word && c.anchor_color
+          (c) => c.from_verse_id === verseId && c.anchor_word === wordKey && c.anchor_color
         );
         if (existing?.anchor_color) {
-          return { verseId, word, color: existing.anchor_color };
+          return { verseId, word: wordKey, color: existing.anchor_color };
         }
 
         // Pick next palette color based on how many anchors this verse already has
@@ -141,7 +142,7 @@ export default function VerseFlowCanvas({
           (c) => c.from_verse_id === verseId && c.anchor_word
         ).length;
         const color = ANCHOR_COLOR_PALETTE[anchoredCount % ANCHOR_COLOR_PALETTE.length];
-        return { verseId, word, color };
+        return { verseId, word: wordKey, color };
       });
     },
     [connections]
@@ -253,16 +254,28 @@ export default function VerseFlowCanvas({
   const onConnect = useCallback(
     (params: Connection) => {
       if (params.source && params.target) {
-        // Attach anchor if the dragged connection starts from the anchored verse
-        const anchor =
-          pendingAnchor?.verseId === params.source ? pendingAnchor : null;
+        let sourceId = params.source;
+        let targetId = params.target;
+        let anchor = null;
+
+        if (pendingAnchor?.verseId === params.source) {
+          anchor = pendingAnchor;
+        } else if (pendingAnchor?.verseId === params.target) {
+          // If the user drags backwards to the anchored verse, we automatically 
+          // flip the connection so the anchored verse becomes the source.
+          anchor = pendingAnchor;
+          sourceId = params.target;
+          targetId = params.source;
+        }
+
         onCreateConnection(
-          params.source,
-          params.target,
+          sourceId,
+          targetId,
           'references',
-          anchor?.word,
+          anchor?.word, // this is the anchorKey now
           anchor?.color
         );
+        
         // Clear pending anchor after the connection is made
         if (anchor) setPendingAnchor(null);
       }
@@ -332,7 +345,7 @@ export default function VerseFlowCanvas({
             />
           </svg>
           <span>
-            Word &ldquo;<strong>{pendingAnchor.word}</strong>&rdquo; anchored — drag a handle to link a verse
+            Word &ldquo;<strong>{parseAnchorKey(pendingAnchor.word)?.word || pendingAnchor.word}</strong>&rdquo; anchored — drag a handle to link a verse
           </span>
         </div>
       )}
