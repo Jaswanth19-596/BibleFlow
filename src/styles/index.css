@@ -77,6 +77,19 @@ html, body, #root {
   box-shadow: 0 0 0 2px #6366f1, 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+/* In-topic search — matching node glows amber/gold */
+.verse-node.search-match {
+  box-shadow: 0 0 0 2.5px #f59e0b, 0 0 16px 4px rgba(251, 191, 36, 0.45);
+  z-index: 10;
+  transition: box-shadow 0.25s ease, opacity 0.25s ease;
+}
+
+/* In-topic search — non-matching nodes are dimmed */
+.verse-node.search-dimmed {
+  opacity: 0.35;
+  transition: opacity 0.25s ease;
+}
+
 .dark .verse-node {
   background: #1f2937;
   color: #f9fafb;

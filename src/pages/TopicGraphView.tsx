@@ -13,6 +13,7 @@ import { useTopics } from '@/hooks/useTopics';
 import { useVerses } from '@/hooks/useVerses';
 import { useConnections } from '@/hooks/useConnections';
 import { useTopicLinks } from '@/hooks/useTopicLinks';
+import { useDebounce } from '@/hooks/useDebounce';
 import { Verse, VerseType, ConnectionType } from '@/lib/types';
 
 export default function TopicGraphView() {
@@ -39,6 +40,10 @@ export default function TopicGraphView() {
   } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [verseToDelete, setVerseToDelete] = useState<string | null>(null);
+
+  // In-topic search
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebounce(searchInput, 300);
 
   // Get topic links for this topic
   const thisTopicLinks = topicLinks.filter((l) => l.from_topic_id === id || l.to_topic_id === id);
@@ -193,8 +198,8 @@ export default function TopicGraphView() {
     <>
       {/* Toolbar */}
       <div className="absolute top-0 left-0 right-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
             <Button variant="ghost" onClick={() => navigate('/topics/network')}>
               <svg className="w-5 h-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -224,15 +229,47 @@ export default function TopicGraphView() {
               </div>
             ) : (
               <h1
-                className="text-xl font-bold text-gray-900 dark:text-white cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400"
+                className="text-xl font-bold text-gray-900 dark:text-white cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 whitespace-nowrap"
                 onClick={() => setEditingTopicName(true)}
               >
                 {topic.name}
               </h1>
             )}
+
+            {/* In-Topic Search Bar */}
+            <div className="relative flex items-center flex-1 max-w-xs ml-2">
+              <svg
+                className="absolute left-2.5 w-4 h-4 text-gray-400 pointer-events-none"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                id="topic-search-input"
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search verses in this topic…"
+                className="w-full pl-8 pr-7 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-shadow"
+              />
+              {searchInput && (
+                <button
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Button variant="secondary" onClick={handleAddVerse}>
               <svg className="w-5 h-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -268,6 +305,7 @@ export default function TopicGraphView() {
           onVerseClick={handleVerseClick}
           onVerseDoubleClick={handleVerseDoubleClick}
           onCrossTopicLinkClick={handleCrossTopicLinkClick}
+          searchQuery={debouncedSearch}
         />
       </div>
 

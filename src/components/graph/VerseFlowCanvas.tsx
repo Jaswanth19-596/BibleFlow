@@ -23,6 +23,7 @@ import { useDebouncedCallback } from '@/hooks/useDebounce';
 import { ANCHOR_COLOR_PALETTE } from '@/lib/edgeTypes';
 import type { AnchorHighlight } from './VerseNode';
 import { parseAnchorKey } from '@/lib/utils';
+import { formatVerseRef } from '@/lib/bibleBooks';
 
 interface PendingAnchor {
   verseId: string;
@@ -51,6 +52,7 @@ interface VerseFlowCanvasProps {
   onVerseDoubleClick?: (verse: Verse) => void;
   onCrossTopicLinkClick?: (link: TopicLink) => void;
   highlightedVerseId?: string | null;
+  searchQuery?: string | null;
 }
 
 const nodeTypes: NodeTypes = {
@@ -116,6 +118,7 @@ export default function VerseFlowCanvas({
   onVerseDoubleClick,
   onCrossTopicLinkClick,
   highlightedVerseId,
+  searchQuery,
 }: VerseFlowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -150,8 +153,41 @@ export default function VerseFlowCanvas({
 
   // ─── Node data builder ──────────────────────────────────────────────────────
   const buildNodes = useCallback(
-    (verseList: Verse[], highlightsMap: Map<string, AnchorHighlight[]>): Node[] =>
-      verseList.map((verse) => ({
+    (verseList: Verse[], highlightsMap: Map<string, AnchorHighlight[]>): Node[] => {
+      const q = searchQuery?.trim().toLowerCase() || '';
+      const activeSearch = q.length >= 2;
+
+      // Pre-compute which verse IDs match the query
+      const matchIds = activeSearch
+        ? new Set(
+            verseList
+              .filter((v) => {
+                // Abbreviated ref as shown in the node header, e.g. "Isa 14:1"
+                const abbrevRef = formatVerseRef(v.book, v.chapter, v.verse_start, v.verse_end);
+                // Full name ref, e.g. "Isaiah 14:1"
+                const fullRef = v.verse_end && v.verse_end !== v.verse_start
+                  ? `${v.book} ${v.chapter}:${v.verse_start}-${v.verse_end}`
+                  : `${v.book} ${v.chapter}:${v.verse_start}`;
+                // Standalone chapter:verse, e.g. "14:1"
+                const chapterVerse = `${v.chapter}:${v.verse_start}`;
+
+                const haystack = [
+                  v.text,
+                  v.note,
+                  v.book,
+                  abbrevRef,
+                  fullRef,
+                  chapterVerse,
+                ]
+                  .join(' ')
+                  .toLowerCase();
+                return haystack.includes(q);
+              })
+              .map((v) => v.id)
+          )
+        : null;
+
+      return verseList.map((verse) => ({
         id: verse.id,
         type: 'verse',
         position: { x: verse.position_x, y: verse.position_y },
@@ -165,10 +201,14 @@ export default function VerseFlowCanvas({
           pendingAnchorColor:
             pendingAnchor?.verseId === verse.id ? pendingAnchor.color : null,
           onWordClick: handleWordClick,
+          searchQuery: activeSearch ? q : null,
+          isSearchMatch: matchIds ? matchIds.has(verse.id) : false,
+          isSearchDimmed: matchIds ? !matchIds.has(verse.id) : false,
         },
         selected: verse.id === highlightedVerseId,
-      })),
-    [onVerseClick, onVerseDoubleClick, pendingAnchor, handleWordClick, highlightedVerseId]
+      }));
+    },
+    [onVerseClick, onVerseDoubleClick, pendingAnchor, handleWordClick, highlightedVerseId, searchQuery]
   );
 
   // ─── Edge data builder ──────────────────────────────────────────────────────

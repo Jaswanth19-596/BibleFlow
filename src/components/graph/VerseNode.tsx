@@ -18,6 +18,9 @@ interface VerseNodeData {
   pendingAnchorWord?: string | null;         // word anchor key selected but not yet connected
   pendingAnchorColor?: string | null;
   onWordClick?: (verseId: string, word: string) => void;
+  searchQuery?: string | null;               // text to highlight within this node
+  isSearchMatch?: boolean;                   // true if this node matches the search
+  isSearchDimmed?: boolean;                  // true if search is active but this node doesn't match
 }
 
 interface VerseNodeProps {
@@ -36,6 +39,9 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
   const verse = data.verse;
   const borderColor = VERSE_TYPE_COLORS[verse.type] || VERSE_TYPE_COLORS.context;
   const verseRef = formatVerseRef(verse.book, verse.chapter, verse.verse_start, verse.verse_end);
+  const searchQuery = data.searchQuery?.trim().toLowerCase() || '';
+  const isSearchMatch = data.isSearchMatch ?? false;
+  const isSearchDimmed = data.isSearchDimmed ?? false;
 
   const highlights = data.connectionHighlights || [];
   const pendingAnchorKey = data.pendingAnchorWord ?? null;
@@ -49,7 +55,40 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
     [data, verse.id]
   );
 
+  /** Returns segments of `text` split around all case-insensitive occurrences of `query` */
+  const splitByQuery = (text: string, query: string): { segment: string; match: boolean }[] => {
+    if (!query) return [{ segment: text, match: false }];
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(regex);
+    return parts.map((part) => ({ segment: part, match: part.toLowerCase() === query.toLowerCase() }));
+  };
+
   const renderVerseText = (text: string) => {
+    // If there is a search query, we do a simpler segment-based render with highlights
+    if (searchQuery) {
+      const segments = splitByQuery(text, searchQuery);
+      return segments.map((seg, i) =>
+        seg.match ? (
+          <mark
+            key={i}
+            className="search-highlight"
+            style={{
+              backgroundColor: '#fbbf24',
+              color: '#1c1917',
+              borderRadius: '2px',
+              padding: '0 1px',
+              fontWeight: 700,
+            }}
+          >
+            {seg.segment}
+          </mark>
+        ) : (
+          <span key={i}>{seg.segment}</span>
+        )
+      );
+    }
+
     // Split preserving whitespace tokens
     const tokens = text.split(/(\s+)/);
     const wordCounts = new Map<string, number>();
@@ -144,7 +183,11 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
 
   return (
     <div
-      className={`verse-node ${selected ? 'selected' : ''}`}
+      className={`verse-node ${
+        selected ? 'selected' : ''
+      } ${
+        isSearchMatch ? 'search-match' : isSearchDimmed ? 'search-dimmed' : ''
+      }`}
       style={{ borderColor }}
       onClick={() => data.onClick?.(verse)}
       onDoubleClick={() => data.onDoubleClick?.(verse)}
