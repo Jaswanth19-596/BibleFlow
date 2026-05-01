@@ -1,9 +1,10 @@
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Verse } from '@/lib/types';
+import { Verse, Entity, EntityMentionWithEntity } from '@/lib/types';
 import { formatVerseRef } from '@/lib/bibleBooks';
 import { VERSE_TYPE_COLORS } from '@/lib/edgeTypes';
 import { parseAnchorKey, buildAnchorKey } from '@/lib/utils';
+import EntityChipBar from '@/components/entities/EntityChipBar';
 
 export interface AnchorHighlight {
   word: string;  // lowercase, stripped of leading/trailing punctuation
@@ -21,6 +22,11 @@ interface VerseNodeData {
   searchQuery?: string | null;               // text to highlight within this node
   isSearchMatch?: boolean;                   // true if this node matches the search
   isSearchDimmed?: boolean;                  // true if search is active but this node doesn't match
+  // Entity tagging
+  entityMentions?: EntityMentionWithEntity[];
+  onEntityClick?: (entity: Entity) => void;
+  onEntityRemove?: (mentionId: string) => void;
+  onEntityAddClick?: (verseId: string) => void;
 }
 
 interface VerseNodeProps {
@@ -247,6 +253,14 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
           <span>&ldquo;{parseAnchorKey(pendingAnchorKey)?.word || pendingAnchorKey}&rdquo; — drag handle to link</span>
         </div>
       )}
+
+      {/* Entity chips */}
+      <EntityChipBar
+        mentions={data.entityMentions || []}
+        onEntityClick={data.onEntityClick}
+        onRemoveMention={data.onEntityRemove}
+        onAddClick={data.onEntityAddClick ? () => data.onEntityAddClick!(verse.id) : undefined}
+      />
 
       {/* User note */}
       {verse.note && (

@@ -61,7 +61,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       );
 
       if (foundVerses.length > 0) {
-        const text = foundVerses.map(v => v.text.replace(/^[¶\s]+/, '')).join(' ');
+        const text = foundVerses.map(v => v.text.replace(/^[¶\s]+/, '').replace(/[‹›]/g, '')).join(' ');
         self.postMessage({ jobId, result: text });
       } else {
         self.postMessage({ jobId, result: null });

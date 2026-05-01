@@ -50,3 +50,68 @@ export interface VerseWithTopic extends Verse {
   topic_name?: string;
   topic_color?: string;
 }
+
+// ─── Entity system ──────────────────────────────────────────────────────────
+
+export type EntityType = 'person' | 'place' | 'nation' | 'event' | 'object' | 'concept';
+
+export type EntityMentionContext = 'speaker' | 'subject' | 'mentioned' | 'addressed' | 'location' | 'event_ref';
+
+// Custom string — users can type any relationship label
+export type EntityRelationType = string;
+
+export interface Entity {
+  id: string;
+  name: string;
+  type: EntityType;
+  description: string;
+  metadata: Record<string, unknown>;
+  color: string;
+  timeline_period_id: string | null;
+  atlas_x: number;
+  atlas_y: number;
+  lat?: number;
+  lng?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EntityMention {
+  id: string;
+  entity_id: string;
+  verse_id: string;
+  context: EntityMentionContext;
+  word_anchor: string | null;
+  created_at: string;
+}
+
+export interface EntityMentionWithEntity extends EntityMention {
+  entity?: Entity;
+}
+
+export interface EntityMentionWithVerse extends EntityMention {
+  verse?: Verse;
+  topic_name?: string;
+  topic_color?: string;
+}
+
+export interface EntityRelationship {
+  id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  type: EntityRelationType;
+  description: string;
+  sort_order?: number;
+  created_at: string;
+}
+
+// ─── Timeline periods ───────────────────────────────────────────────────────
+
+export interface TimelinePeriod {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+}
+

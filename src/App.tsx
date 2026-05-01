@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard';
 import TopicGraphView from './pages/TopicGraphView';
 import TopicsNetwork from './pages/TopicsNetwork';
 import SearchPage from './pages/SearchPage';
+import ContextAtlasPage from './pages/ContextAtlasPage';
+import MapAtlasPage from './pages/MapAtlasPage';
 
 function App() {
   return (
@@ -15,6 +17,8 @@ function App() {
           <Route path="/topic/:id" element={<TopicGraphView />} />
           <Route path="/topics/network" element={<TopicsNetwork />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/atlas" element={<ContextAtlasPage />} />
+          <Route path="/map" element={<MapAtlasPage />} />
         </Routes>
       </AppShell>
     </ReactFlowProvider>

@@ -18,7 +18,7 @@ import {
 import VerseNode from './VerseNode';
 import ConnectionEdgeComponent from './ConnectionEdge';
 import CrossTopicEdgeComponent from './CrossTopicEdge';
-import { Verse, Connection as ConnType, ConnectionType, TopicLink } from '@/lib/types';
+import { Verse, Connection as ConnType, ConnectionType, TopicLink, Entity, EntityMentionWithEntity } from '@/lib/types';
 import { useDebouncedCallback } from '@/hooks/useDebounce';
 import { ANCHOR_COLOR_PALETTE } from '@/lib/edgeTypes';
 import type { AnchorHighlight } from './VerseNode';
@@ -53,6 +53,11 @@ interface VerseFlowCanvasProps {
   onCrossTopicLinkClick?: (link: TopicLink) => void;
   highlightedVerseId?: string | null;
   searchQuery?: string | null;
+  // Entity tagging
+  entityMentionsByVerse?: Map<string, EntityMentionWithEntity[]>;
+  onEntityClick?: (entity: Entity) => void;
+  onEntityRemove?: (mentionId: string) => void;
+  onEntityAddClick?: (verseId: string) => void;
 }
 
 const nodeTypes: NodeTypes = {
@@ -119,6 +124,10 @@ export default function VerseFlowCanvas({
   onCrossTopicLinkClick,
   highlightedVerseId,
   searchQuery,
+  entityMentionsByVerse,
+  onEntityClick,
+  onEntityRemove,
+  onEntityAddClick,
 }: VerseFlowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -204,11 +213,16 @@ export default function VerseFlowCanvas({
           searchQuery: activeSearch ? q : null,
           isSearchMatch: matchIds ? matchIds.has(verse.id) : false,
           isSearchDimmed: matchIds ? !matchIds.has(verse.id) : false,
+          // Entity data
+          entityMentions: entityMentionsByVerse?.get(verse.id) || [],
+          onEntityClick,
+          onEntityRemove,
+          onEntityAddClick,
         },
         selected: verse.id === highlightedVerseId,
       }));
     },
-    [onVerseClick, onVerseDoubleClick, pendingAnchor, handleWordClick, highlightedVerseId, searchQuery]
+    [onVerseClick, onVerseDoubleClick, pendingAnchor, handleWordClick, highlightedVerseId, searchQuery, entityMentionsByVerse, onEntityClick, onEntityRemove, onEntityAddClick]
   );
 
   // ─── Edge data builder ──────────────────────────────────────────────────────

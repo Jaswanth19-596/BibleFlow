@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toPng } from 'html-to-image';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
 import Modal from '@/components/common/Modal';
@@ -9,12 +10,15 @@ import VerseFlowCanvas from '@/components/graph/VerseFlowCanvas';
 import VerseSidebar from '@/components/graph/VerseSidebar';
 import ConnectionPopover from '@/components/graph/ConnectionPopover';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import TagEntityModal from '@/components/entities/TagEntityModal';
+import EntityDetailSidebar from '@/components/entities/EntityDetailSidebar';
 import { useTopics } from '@/hooks/useTopics';
 import { useVerses } from '@/hooks/useVerses';
 import { useConnections } from '@/hooks/useConnections';
 import { useTopicLinks } from '@/hooks/useTopicLinks';
 import { useDebounce } from '@/hooks/useDebounce';
-import { Verse, VerseType, ConnectionType } from '@/lib/types';
+import { Verse, VerseType, ConnectionType, Entity, EntityMentionWithEntity, EntityMentionContext } from '@/lib/types';
+import { getMentionsByVerse, createEntityMention, deleteEntityMention, subscribeToEntityMentions } from '@/lib/supabase';
 
 export default function TopicGraphView() {
   const { id } = useParams<{ id: string }>();
@@ -47,6 +51,66 @@ export default function TopicGraphView() {
 
   // Get topic links for this topic
   const thisTopicLinks = topicLinks.filter((l) => l.from_topic_id === id || l.to_topic_id === id);
+
+  // ─── Entity tagging state ────────────────────────────────────────────────────
+  const queryClient = useQueryClient();
+  const [tagEntityVerseId, setTagEntityVerseId] = useState<string | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+
+  // Load entity mentions for all verses in this topic
+  const verseIds = verses.map((v) => v.id);
+  const { data: allMentionsFlat = [] } = useQuery({
+    queryKey: ['entity-mentions-topic', id, verseIds.join(',')],
+    queryFn: async () => {
+      if (verseIds.length === 0) return [];
+      const results = await Promise.all(verseIds.map((vid) => getMentionsByVerse(vid)));
+      return results.flat();
+    },
+    enabled: verseIds.length > 0,
+  });
+
+  // Real-time subscription for entity mentions
+  useEffect(() => {
+    const channel = subscribeToEntityMentions(() => {
+      queryClient.invalidateQueries({ queryKey: ['entity-mentions-topic', id] });
+    });
+    return () => { channel.unsubscribe(); };
+  }, [id, queryClient]);
+
+  // Build a Map<verseId, EntityMentionWithEntity[]> for the canvas
+  const entityMentionsByVerse = useMemo(() => {
+    const map = new Map<string, EntityMentionWithEntity[]>();
+    allMentionsFlat.forEach((m) => {
+      const list = map.get(m.verse_id) || [];
+      list.push(m);
+      map.set(m.verse_id, list);
+    });
+    return map;
+  }, [allMentionsFlat]);
+
+  const handleEntityTag = useCallback(async (entityId: string, context: EntityMentionContext) => {
+    if (!tagEntityVerseId) return;
+    await createEntityMention({
+      entity_id: entityId,
+      verse_id: tagEntityVerseId,
+      context,
+      word_anchor: null,
+    });
+    queryClient.invalidateQueries({ queryKey: ['entity-mentions-topic', id] });
+  }, [tagEntityVerseId, id, queryClient]);
+
+  const handleEntityRemove = useCallback(async (mentionId: string) => {
+    await deleteEntityMention(mentionId);
+    queryClient.invalidateQueries({ queryKey: ['entity-mentions-topic', id] });
+  }, [id, queryClient]);
+
+  const handleEntityClick = useCallback((entity: Entity) => {
+    setSelectedEntity(entity);
+  }, []);
+
+  const handleEntityAddClick = useCallback((verseId: string) => {
+    setTagEntityVerseId(verseId);
+  }, []);
 
   useEffect(() => {
     if (topic) {
@@ -306,6 +370,10 @@ export default function TopicGraphView() {
           onVerseDoubleClick={handleVerseDoubleClick}
           onCrossTopicLinkClick={handleCrossTopicLinkClick}
           searchQuery={debouncedSearch}
+          entityMentionsByVerse={entityMentionsByVerse}
+          onEntityClick={handleEntityClick}
+          onEntityRemove={handleEntityRemove}
+          onEntityAddClick={handleEntityAddClick}
         />
       </div>
 
@@ -357,6 +425,26 @@ export default function TopicGraphView() {
           onClose={handleCloseVerseModal}
         />
       </Modal>
+
+      {/* Entity Tag Modal */}
+      <TagEntityModal
+        open={!!tagEntityVerseId}
+        onClose={() => setTagEntityVerseId(null)}
+        onTag={handleEntityTag}
+        existingEntityIds={
+          tagEntityVerseId
+            ? (entityMentionsByVerse.get(tagEntityVerseId) || []).map((m) => m.entity_id)
+            : []
+        }
+      />
+
+      {/* Entity Detail Sidebar */}
+      {selectedEntity && (
+        <EntityDetailSidebar
+          entity={selectedEntity}
+          onClose={() => setSelectedEntity(null)}
+        />
+      )}
     </>
   );
 }
