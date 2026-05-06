@@ -9,6 +9,8 @@ import { usePeopleAtlas } from '@/hooks/usePeopleAtlas';
 import { Entity } from '@/lib/types';
 import CreatePlaceModal from './CreatePlaceModal';
 import MapSidebar from './MapSidebar';
+import MapSearchBar, { SearchContext } from './MapSearchBar';
+import { BIBLICAL_PLACES } from '@/data/biblicalPlaces';
 
 // Create a proper default icon
 const DefaultIcon = L.icon({
@@ -49,11 +51,16 @@ export default function BibleMap() {
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [clickCoord, setClickCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [showBiblicalLayer, setShowBiblicalLayer] = useState(true);
+  const [mapStyle, setMapStyle] = useState<'modern' | 'terrain'>('modern');
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const routeLinesRef = useRef<L.Layer[]>([]);
+  const biblicalLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const searchPinRef = useRef<L.Marker | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const people = useMemo(() => entities.filter(e => e.type === 'person'), [entities]);
 
@@ -140,6 +147,87 @@ export default function BibleMap() {
   );
   const routeColor = selectedPerson?.color || '#6366f1';
 
+  const handleFlyTo = useCallback((lat: number, lng: number, zoom = 11, context?: SearchContext) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Remove previous search pin
+    if (searchPinRef.current) {
+      searchPinRef.current.remove();
+      searchPinRef.current = null;
+    }
+
+    map.flyTo([lat, lng], zoom, { duration: 1.5 });
+
+    if (context) {
+      // Wait for fly animation to settle, then drop pin
+      setTimeout(() => {
+        if (!mapRef.current) return;
+
+        const isSource = context.source === 'biblical';
+        const pinIcon = L.divIcon({
+          className: '',
+          html: `<div style="
+            position:relative;
+            display:flex;flex-direction:column;align-items:center;
+          ">
+            <div style="
+              background:${isSource ? '#b45309' : '#4f46e5'};
+              color:white;
+              padding:5px 10px;
+              border-radius:8px;
+              font-size:13px;
+              font-weight:700;
+              white-space:nowrap;
+              box-shadow:0 3px 10px rgba(0,0,0,0.35);
+              border:2px solid white;
+              max-width:200px;
+              overflow:hidden;
+              text-overflow:ellipsis;
+            ">${context.name}</div>
+            <div style="
+              width:0;height:0;
+              border-left:7px solid transparent;
+              border-right:7px solid transparent;
+              border-top:10px solid ${isSource ? '#b45309' : '#4f46e5'};
+              margin-top:-1px;
+            "></div>
+            <div style="
+              width:10px;height:10px;border-radius:50%;
+              background:${isSource ? '#b45309' : '#4f46e5'};
+              border:2px solid white;
+              margin-top:-2px;
+              box-shadow:0 2px 6px rgba(0,0,0,0.3);
+            "></div>
+          </div>`,
+          iconSize: [200, 60],
+          iconAnchor: [100, 58],
+        });
+
+        const popupContent = `
+          <div style="min-width:180px;font-family:system-ui,sans-serif;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span style="font-size:18px;">${isSource ? '✝️' : '📍'}</span>
+              <h3 style="font-weight:700;font-size:15px;margin:0;color:#111827;">${context.name}</h3>
+            </div>
+            ${context.description ? `<p style="font-size:12px;color:#6b7280;margin:0 0 6px;line-height:1.4;">${context.description}</p>` : ''}
+            <div style="font-size:11px;color:#9ca3af;border-top:1px solid #f3f4f6;padding-top:6px;margin-top:4px;">
+              ${isSource ? '📖 Biblical location' : '🌍 Modern location'}
+            </div>
+          </div>
+        `;
+
+        const pin = L.marker([lat, lng], { icon: pinIcon, zIndexOffset: 1000 })
+          .addTo(mapRef.current)
+          .bindPopup(popupContent, { offset: [0, -55], maxWidth: 240 });
+
+        // Auto-open popup after brief delay
+        setTimeout(() => pin.openPopup(), 400);
+        searchPinRef.current = pin;
+      }, 800);
+    }
+  }, []);
+
   const handleCreatePlace = async (name: string, description: string) => {
     if (!clickCoord) return;
     await createEntity({
@@ -193,11 +281,16 @@ export default function BibleMap() {
       zoomControl: true,
     });
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    const tile = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/">CARTO</a>',
       maxZoom: 19,
     }).addTo(map);
+    tileLayerRef.current = tile;
+
+    // Biblical overlay layer group
+    const layerGroup = L.layerGroup().addTo(map);
+    biblicalLayerGroupRef.current = layerGroup;
 
     map.on('click', (e: L.LeafletMouseEvent) => {
       setClickCoord({ lat: e.latlng.lat, lng: e.latlng.lng });
@@ -209,7 +302,144 @@ export default function BibleMap() {
     return () => {
       map.remove();
       mapRef.current = null;
+      biblicalLayerGroupRef.current = null;
+      tileLayerRef.current = null;
     };
+  }, []);
+
+  // ─── Biblical places overlay ────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    const group = biblicalLayerGroupRef.current;
+    if (!map || !group) return;
+
+    const renderOverlay = () => {
+      group.clearLayers();
+      if (!showBiblicalLayer) return;
+
+      const zoom = map.getZoom();
+      const bounds = map.getBounds().pad(0.15); // slight padding so labels near edges show
+
+      // Determine which tiers to show based on zoom
+      const minImportance = zoom >= 10 ? 3 : zoom >= 7 ? 2 : 1;
+
+      BIBLICAL_PLACES.forEach(place => {
+        const imp = place.importance ?? 3;
+        if (imp > minImportance) return;
+        if (!bounds.contains([place.lat, place.lng])) return;
+
+        const isPrimary = imp === 1;
+        const isSecondary = imp === 2;
+
+        const circleColor = isPrimary ? '#92400e' : isSecondary ? '#b45309' : '#d97706';
+        const radius = isPrimary ? 5 : isSecondary ? 4 : 3;
+        const fontWeight = isPrimary ? '700' : isSecondary ? '600' : '500';
+        const fontSize = isPrimary ? '12px' : isSecondary ? '11px' : '10px';
+        const textColor = isPrimary ? '#78350f' : '#92400e';
+
+        const circle = L.circleMarker([place.lat, place.lng], {
+          radius,
+          color: 'white',
+          weight: 1.5,
+          fillColor: circleColor,
+          fillOpacity: 0.9,
+          interactive: true,
+        });
+
+        circle.bindTooltip(place.name, {
+          permanent: imp <= 2,       // Tier 1+2: always-on label; Tier 3: hover only
+          direction: 'top',
+          offset: [0, -radius - 2],
+          className: '',             // We style via options below
+          opacity: 0.95,
+        });
+
+        // Override tooltip style via the DOM after binding
+        circle.on('add', () => {
+          const el = (circle as unknown as { _tooltip?: { _container?: HTMLElement } })._tooltip?._container;
+          if (el) {
+            Object.assign(el.style, {
+              background: 'rgba(255,251,235,0.92)',
+              border: '1px solid #d97706',
+              borderRadius: '4px',
+              color: textColor,
+              fontSize,
+              fontWeight,
+              fontFamily: 'system-ui, sans-serif',
+              padding: '2px 5px',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+              whiteSpace: 'nowrap',
+            });
+            const tipEl = el.querySelector('.leaflet-tooltip-top') as HTMLElement;
+            if (tipEl) tipEl.style.borderTopColor = '#d97706';
+          }
+        });
+
+        // Popup with verse reference
+        circle.bindPopup(`
+          <div style="font-family:system-ui,sans-serif;min-width:160px;">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
+              <span style="font-size:16px;">✝️</span>
+              <strong style="font-size:14px;color:#111827;">${place.name}</strong>
+            </div>
+            ${place.note ? `<p style="font-size:12px;color:#6b7280;margin:0 0 5px;">${place.note}</p>` : ''}
+            <div style="font-size:11px;color:#d97706;font-weight:600;">📖 ${place.verses}</div>
+          </div>
+        `, { maxWidth: 220 });
+
+        group.addLayer(circle);
+      });
+    };
+
+    renderOverlay();
+
+    map.on('moveend zoomend', renderOverlay);
+    return () => {
+      map.off('moveend zoomend', renderOverlay);
+      group.clearLayers();
+    };
+  }, [showBiblicalLayer]);
+
+  // ─── Map style switcher ────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !tileLayerRef.current) return;
+
+    const TILE_URLS = {
+      modern: {
+        url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/">CARTO</a>',
+      },
+      terrain: {
+        url: 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://stamen.com">Stamen Design</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      },
+    };
+
+    tileLayerRef.current.remove();
+    const { url, attribution } = TILE_URLS[mapStyle];
+    const newTile = L.tileLayer(url, { attribution, maxZoom: 19 }).addTo(map);
+    tileLayerRef.current = newTile;
+    // Re-add biblical layer group so it renders above the new basemap
+    if (biblicalLayerGroupRef.current) {
+      biblicalLayerGroupRef.current.remove();
+      biblicalLayerGroupRef.current.addTo(map);
+    }
+  }, [mapStyle]);
+
+  // ─── Click anywhere on map dismisses the search pin ───────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const handler = () => {
+      if (searchPinRef.current) {
+        searchPinRef.current.remove();
+        searchPinRef.current = null;
+      }
+    };
+    // Use a small delay so the pin's own click doesn't close it
+    map.on('click', handler);
+    return () => { map.off('click', handler); };
   }, []);
 
   // ─── Sync markers & route with data ────────────────────────────────────
@@ -339,14 +569,75 @@ export default function BibleMap() {
       <div className="flex-1 relative z-0">
         <div ref={mapContainerRef} style={{ height: '100%', width: '100%' }} />
 
-        <div className="absolute top-4 left-4 z-[400] pointer-events-none">
-          <div className="bg-white/90 backdrop-blur px-4 py-2 rounded-lg shadow-sm border border-gray-200 pointer-events-auto">
-            <h1 className="font-bold text-gray-900 text-lg">Biblical Map</h1>
-            <p className="text-xs text-gray-500">
+        <MapSearchBar places={places} onFlyTo={handleFlyTo} />
+
+        {/* ─── Top-left control panel ───────────────────────────────── */}
+        <div className="absolute top-4 left-4 z-[400] flex flex-col gap-2 pointer-events-none">
+
+          {/* Title card */}
+          <div className="bg-white/95 backdrop-blur-sm px-4 py-2.5 rounded-xl shadow-md border border-gray-200/80 pointer-events-auto">
+            <h1 className="font-bold text-gray-900 text-base leading-tight">✝️ Biblical Map</h1>
+            <p className="text-[11px] text-gray-500 mt-0.5">
               {selectedPerson
-                ? `Showing ${selectedPerson.name}'s route (${selectedPersonRoute.length} stops)`
-                : 'Click anywhere on the map to add a location'}
+                ? `${selectedPerson.name}'s route — ${selectedPersonRoute.length} stops`
+                : 'Click anywhere to pin a location'}
             </p>
+          </div>
+
+          {/* Layer toggles */}
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-md border border-gray-200/80 overflow-hidden pointer-events-auto">
+
+            {/* Biblical Places toggle */}
+            <button
+              onClick={() => setShowBiblicalLayer(v => !v)}
+              className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors ${
+                showBiblicalLayer
+                  ? 'bg-amber-50 hover:bg-amber-100/70'
+                  : 'hover:bg-gray-50'
+              }`}
+              title="Toggle biblical place names overlay"
+            >
+              <div className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors flex-shrink-0 ${
+                showBiblicalLayer ? 'bg-amber-500' : 'bg-gray-300'
+              }`} style={{ height: '18px' }}>
+                <div className={`w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${
+                  showBiblicalLayer ? 'translate-x-3.5' : 'translate-x-0'
+                }`} style={{ width: '14px', height: '14px' }} />
+              </div>
+              <div className="min-w-0">
+                <p className={`text-xs font-semibold leading-tight ${showBiblicalLayer ? 'text-amber-800' : 'text-gray-500'}`}>
+                  📖 Biblical Places
+                </p>
+                <p className="text-[10px] text-gray-400 leading-tight">Ancient place names overlay</p>
+              </div>
+            </button>
+
+            <div className="border-t border-gray-100" />
+
+            {/* Map style toggle */}
+            <div className="flex">
+              <button
+                onClick={() => setMapStyle('modern')}
+                className={`flex-1 py-2 text-[11px] font-medium transition-colors ${
+                  mapStyle === 'modern'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                🗺 Modern
+              </button>
+              <div className="w-px bg-gray-100" />
+              <button
+                onClick={() => setMapStyle('terrain')}
+                className={`flex-1 py-2 text-[11px] font-medium transition-colors ${
+                  mapStyle === 'terrain'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                🏔 Terrain
+              </button>
+            </div>
           </div>
         </div>
       </div>
