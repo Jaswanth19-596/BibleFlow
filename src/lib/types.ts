@@ -112,6 +112,7 @@ export interface TimelinePeriod {
   name: string;
   color: string;
   sort_order: number;
+  band_height: number;
   created_at: string;
 }
 

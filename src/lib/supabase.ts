@@ -498,6 +498,16 @@ export async function deleteTimelinePeriod(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function reorderTimelinePeriods(
+  orderedIds: { id: string; sort_order: number }[]
+): Promise<void> {
+  await Promise.all(
+    orderedIds.map(({ id, sort_order }) =>
+      supabase.from('timeline_periods').update({ sort_order }).eq('id', id)
+    )
+  );
+}
+
 export function subscribeToTimelinePeriods(callback: () => void) {
   const channel = supabase.channel(`timeline_periods-${Math.random().toString(36).substring(7)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'timeline_periods' }, callback)

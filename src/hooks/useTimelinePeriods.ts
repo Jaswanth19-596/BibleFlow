@@ -6,6 +6,7 @@ import {
   createTimelinePeriod,
   updateTimelinePeriod,
   deleteTimelinePeriod,
+  reorderTimelinePeriods,
   subscribeToTimelinePeriods,
 } from '@/lib/supabase';
 
@@ -33,6 +34,12 @@ export function useTimelinePeriods() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['timeline-periods'] }),
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: (orderedIds: { id: string; sort_order: number }[]) =>
+      reorderTimelinePeriods(orderedIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['timeline-periods'] }),
+  });
+
   useEffect(() => {
     const channel = subscribeToTimelinePeriods(() => {
       queryClient.invalidateQueries({ queryKey: ['timeline-periods'] });
@@ -48,5 +55,6 @@ export function useTimelinePeriods() {
     updatePeriod: (id: string, updates: Partial<Omit<TimelinePeriod, 'id' | 'created_at'>>) =>
       updateMutation.mutateAsync({ id, updates }),
     deletePeriod: deleteMutation.mutateAsync,
+    reorderPeriods: reorderMutation.mutateAsync,
   };
 }

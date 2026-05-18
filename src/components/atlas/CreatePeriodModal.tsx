@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { TimelinePeriod } from '@/lib/types';
 
 interface CreatePeriodModalProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: { name: string; color: string; sort_order: number }) => void;
   nextSortOrder: number;
-  editingPeriod?: { id: string; name: string; color: string; sort_order: number } | null;
+  editingPeriod?: TimelinePeriod | null;
   onDelete?: (id: string) => void;
+  allPeriods: TimelinePeriod[];
+  onReorder?: (orderedIds: { id: string; sort_order: number }[]) => void;
 }
 
 const COLOR_PRESETS = [
@@ -23,26 +26,91 @@ export default function CreatePeriodModal({
   nextSortOrder,
   editingPeriod,
   onDelete,
+  allPeriods,
+  onReorder,
 }: CreatePeriodModalProps) {
   const [name, setName] = useState(editingPeriod?.name || '');
   const [color, setColor] = useState(editingPeriod?.color || '#6366f1');
+  // -1 means "at the end", otherwise it's the index to insert AFTER
+  const [insertAfterIndex, setInsertAfterIndex] = useState<number>(-1);
 
   if (!open) return null;
+
+  const isEditing = !!editingPeriod;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    let sort_order: number;
+    if (isEditing) {
+      sort_order = editingPeriod!.sort_order;
+    } else if (insertAfterIndex === -2) {
+      // Insert at the beginning
+      sort_order = 0;
+      // Shift all existing periods up by 1
+      if (onReorder && allPeriods.length > 0) {
+        onReorder(allPeriods.map((p, i) => ({ id: p.id, sort_order: i + 1 })));
+      }
+    } else if (insertAfterIndex === -1 || insertAfterIndex >= allPeriods.length - 1) {
+      // Append at the end
+      sort_order = nextSortOrder;
+    } else {
+      // Insert after the period at insertAfterIndex
+      // Shift all periods after insertAfterIndex up by 1
+      sort_order = insertAfterIndex + 1;
+      if (onReorder && allPeriods.length > 0) {
+        const toShift = allPeriods
+          .filter((_, i) => i > insertAfterIndex)
+          .map((p, offset) => ({ id: p.id, sort_order: insertAfterIndex + 2 + offset }));
+        if (toShift.length > 0 && onReorder) onReorder(toShift);
+      }
+    }
+
     onSubmit({
       name: name.trim(),
       color,
-      sort_order: editingPeriod?.sort_order ?? nextSortOrder,
+      sort_order,
     });
     setName('');
     setColor('#6366f1');
+    setInsertAfterIndex(-1);
     onClose();
   };
 
-  const isEditing = !!editingPeriod;
+  // Move the editing period one step up (lower sort_order)
+  const handleMoveUp = () => {
+    if (!editingPeriod || !onReorder) return;
+    const sorted = [...allPeriods].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = sorted.findIndex((p) => p.id === editingPeriod.id);
+    if (idx <= 0) return;
+    // Swap sort_orders with the period above
+    const swapped = sorted.map((p, i) => {
+      if (i === idx - 1) return { id: p.id, sort_order: sorted[idx].sort_order };
+      if (i === idx) return { id: p.id, sort_order: sorted[idx - 1].sort_order };
+      return { id: p.id, sort_order: p.sort_order };
+    });
+    onReorder(swapped);
+    onClose();
+  };
+
+  // Move the editing period one step down (higher sort_order)
+  const handleMoveDown = () => {
+    if (!editingPeriod || !onReorder) return;
+    const sorted = [...allPeriods].sort((a, b) => a.sort_order - b.sort_order);
+    const idx = sorted.findIndex((p) => p.id === editingPeriod.id);
+    if (idx < 0 || idx >= sorted.length - 1) return;
+    const swapped = sorted.map((p, i) => {
+      if (i === idx) return { id: p.id, sort_order: sorted[idx + 1].sort_order };
+      if (i === idx + 1) return { id: p.id, sort_order: sorted[idx].sort_order };
+      return { id: p.id, sort_order: p.sort_order };
+    });
+    onReorder(swapped);
+    onClose();
+  };
+
+  const sortedPeriods = [...allPeriods].sort((a, b) => a.sort_order - b.sort_order);
+  const editingIdx = isEditing ? sortedPeriods.findIndex((p) => p.id === editingPeriod!.id) : -1;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
@@ -91,6 +159,95 @@ export default function CreatePeriodModal({
             >
               {name || 'Preview'}
             </div>
+
+            {/* Insert Position (only when creating) */}
+            {!isEditing && (
+              <div className="mt-4">
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+                  Insert Position
+                </label>
+                <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-1">
+                  {/* At the beginning */}
+                  <button
+                    type="button"
+                    onClick={() => setInsertAfterIndex(-2)}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      insertAfterIndex === -2
+                        ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300'
+                        : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    ↑ At the beginning
+                  </button>
+
+                  {/* After each existing period */}
+                  {sortedPeriods.map((p, i) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setInsertAfterIndex(i)}
+                      className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-2 ${
+                        insertAfterIndex === i
+                          ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300'
+                          : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: p.color }}
+                      />
+                      After: {p.name}
+                    </button>
+                  ))}
+
+                  {/* At the end (default) */}
+                  <button
+                    type="button"
+                    onClick={() => setInsertAfterIndex(-1)}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      insertAfterIndex === -1
+                        ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300'
+                        : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    ↓ At the end {sortedPeriods.length > 0 ? '(default)' : ''}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Move Up / Down (only when editing and there are multiple periods) */}
+            {isEditing && sortedPeriods.length > 1 && (
+              <div className="mt-4">
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+                  Reorder
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMoveUp}
+                    disabled={editingIdx <= 0}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                    </svg>
+                    Move Up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMoveDown}
+                    disabled={editingIdx >= sortedPeriods.length - 1}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Move Down
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700">

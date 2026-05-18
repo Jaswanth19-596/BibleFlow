@@ -29,14 +29,26 @@ import { useDebouncedCallback } from '@/hooks/useDebounce';
 const nodeTypes: NodeTypes = { person: PersonNode };
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
 
-const BAND_HEIGHT = 300;
 const BAND_WIDTH = 4000;
+const DEFAULT_BAND_HEIGHT = 300;
 
 // Suggested relationship types for quick selection
 const QUICK_TYPES = [
   'father of', 'mother of', 'son of', 'daughter of',
   'married to', 'sibling of', 'king of', 'prophet to',
 ];
+
+/** Given a Y position on the canvas, find which period it belongs to */
+function findPeriodForY(y: number, periods: TimelinePeriod[]): TimelinePeriod | null {
+  let cumY = 0;
+  for (const period of periods) {
+    const bh = period.band_height ?? DEFAULT_BAND_HEIGHT;
+    if (y < cumY + bh) return period;
+    cumY += bh;
+  }
+  // Beyond all bands — assign to last
+  return periods.length > 0 ? periods[periods.length - 1] : null;
+}
 
 export default function PeopleAtlas() {
   const [searchParams] = useSearchParams();
@@ -55,6 +67,7 @@ export default function PeopleAtlas() {
     createPeriod,
     updatePeriod,
     deletePeriod,
+    reorderPeriods,
     createEntity,
     updateEntity,
     deleteEntity,
@@ -204,12 +217,12 @@ export default function PeopleAtlas() {
     (_: any, node: Node) => {
       debouncedSavePosition(node.id, node.position.x, node.position.y);
       if (periods.length > 0) {
-        const bandIndex = Math.floor(node.position.y / BAND_HEIGHT);
-        const clampedIndex = Math.max(0, Math.min(bandIndex, periods.length - 1));
-        const targetPeriod = periods[clampedIndex];
-        const person = people.find((p) => p.id === node.id);
-        if (person && person.timeline_period_id !== targetPeriod.id) {
-          assignPeriod(node.id, targetPeriod.id);
+        const targetPeriod = findPeriodForY(node.position.y, periods);
+        if (targetPeriod) {
+          const person = people.find((p) => p.id === node.id);
+          if (person && person.timeline_period_id !== targetPeriod.id) {
+            assignPeriod(node.id, targetPeriod.id);
+          }
         }
       }
     },
@@ -280,13 +293,12 @@ export default function PeopleAtlas() {
     }
   };
 
-  // Delete edge on select + backspace (handled via edge click for now)
   const onEdgeClick = useCallback((_: any, _edge: Edge) => {
     // Could show a delete confirmation — for now, just select it
   }, []);
 
   const handleCreatePeriod = async (data: { name: string; color: string; sort_order: number }) => {
-    await createPeriod(data);
+    await createPeriod({ ...data, band_height: DEFAULT_BAND_HEIGHT });
   };
 
   const handleEditPeriod = (period: TimelinePeriod) => {
@@ -299,7 +311,7 @@ export default function PeopleAtlas() {
       await updatePeriod(editingPeriod.id, data);
       setEditingPeriod(null);
     } else {
-      await createPeriod(data);
+      await createPeriod({ ...data, band_height: DEFAULT_BAND_HEIGHT });
     }
   };
 
@@ -307,6 +319,14 @@ export default function PeopleAtlas() {
     await deletePeriod(id);
     setEditingPeriod(null);
   };
+
+  const handleResizePeriod = useCallback(async (periodId: string, newHeight: number) => {
+    await updatePeriod(periodId, { band_height: newHeight });
+  }, [updatePeriod]);
+
+  const handleReorderPeriods = useCallback(async (orderedIds: { id: string; sort_order: number }[]) => {
+    await reorderPeriods(orderedIds);
+  }, [reorderPeriods]);
 
   // Get names for pending connection display
   const sourceName = pendingConnection
@@ -399,7 +419,11 @@ export default function PeopleAtlas() {
             maxZoom={2}
             proOptions={{ hideAttribution: true }}
           >
-            <TimelineBands periods={periods} bandHeight={BAND_HEIGHT} bandWidth={BAND_WIDTH} />
+            <TimelineBands
+              periods={periods}
+              bandWidth={BAND_WIDTH}
+              onResizePeriod={handleResizePeriod}
+            />
             <Controls position="bottom-right" />
             <MiniMap
               nodeColor={(node: Node) => {
@@ -412,24 +436,30 @@ export default function PeopleAtlas() {
           </ReactFlow>
         )}
 
-        {/* Period list sidebar */}
+        {/* Period list sidebar — click to edit */}
         {periods.length > 0 && (
           <div className="absolute right-4 top-4 z-10 space-y-1 max-w-[160px]">
-            {periods.map((period) => (
-              <button
-                key={period.id}
-                onClick={() => handleEditPeriod(period)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/90 dark:bg-gray-800/90 backdrop-blur border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-all text-left"
-              >
-                <div
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: period.color }}
-                />
-                <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                  {period.name}
-                </span>
-              </button>
-            ))}
+            {[...periods]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((period) => (
+                <button
+                  key={period.id}
+                  onClick={() => handleEditPeriod(period)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/90 dark:bg-gray-800/90 backdrop-blur border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-all text-left"
+                >
+                  <div
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: period.color }}
+                  />
+                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                    {period.name}
+                  </span>
+                  {/* Height hint */}
+                  <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">
+                    {period.band_height ?? DEFAULT_BAND_HEIGHT}px
+                  </span>
+                </button>
+              ))}
           </div>
         )}
 
@@ -497,6 +527,8 @@ export default function PeopleAtlas() {
         nextSortOrder={periods.length}
         editingPeriod={editingPeriod}
         onDelete={handleDeletePeriod}
+        allPeriods={periods}
+        onReorder={handleReorderPeriods}
       />
       
       <CreatePersonModal

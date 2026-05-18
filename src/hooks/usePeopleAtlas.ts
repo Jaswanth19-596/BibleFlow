@@ -16,7 +16,7 @@ import { EntityRelationship } from '@/lib/types';
 export function usePeopleAtlas() {
   const queryClient = useQueryClient();
   const { entities, loading: entitiesLoading, createEntity, updateEntity, deleteEntity } = useEntities();
-  const { periods, loading: periodsLoading, createPeriod, updatePeriod, deletePeriod } = useTimelinePeriods();
+  const { periods, loading: periodsLoading, createPeriod, updatePeriod, deletePeriod, reorderPeriods } = useTimelinePeriods();
 
   // All people entities
   const people = entities.filter((e) => e.type === 'person');
@@ -82,5 +82,6 @@ export function usePeopleAtlas() {
     createPeriod,
     updatePeriod,
     deletePeriod,
+    reorderPeriods,
   };
 }
