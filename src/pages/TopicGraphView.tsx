@@ -17,6 +17,7 @@ import { useVerses } from '@/hooks/useVerses';
 import { useConnections } from '@/hooks/useConnections';
 import { useTopicLinks } from '@/hooks/useTopicLinks';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useReactFlow } from '@xyflow/react';
 import { Verse, VerseType, ConnectionType, Entity, EntityMentionWithEntity, EntityMentionContext } from '@/lib/types';
 import { getMentionsByVerse, createEntityMention, deleteEntityMention, subscribeToEntityMentions } from '@/lib/supabase';
 import { fetchKjvVerseRange } from '@/lib/bibleApi';
@@ -24,6 +25,7 @@ import { fetchKjvVerseRange } from '@/lib/bibleApi';
 export default function TopicGraphView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { screenToFlowPosition } = useReactFlow();
   const { topics, updateTopic } = useTopics();
   const topic = topics.find((t) => t.id === id);
 
@@ -166,15 +168,29 @@ export default function TopicGraphView() {
       if (selectedVerse) {
         await updateVerse(selectedVerse.id, data);
       } else {
-        // Calculate position for new verse
-        const x = 100 + Math.random() * 200;
-        const y = 100 + Math.random() * 200;
+        // Calculate position for new verse in the center of the current viewport
+        const centerScreenX = window.innerWidth / 2;
+        const centerScreenY = window.innerHeight / 2;
+        
+        let x = 100 + Math.random() * 200;
+        let y = 100 + Math.random() * 200;
+        
+        try {
+          const flowPos = screenToFlowPosition({ x: centerScreenX, y: centerScreenY });
+          // Shift coordinates slightly left and up so the center of the node aligns near the screen center
+          // A standard verse node has max-width of ~280px and height around ~120px to ~200px.
+          x = flowPos.x - 140;
+          y = flowPos.y - 80;
+        } catch (err) {
+          console.warn('Failed to calculate viewport center for new verse node:', err);
+        }
+
         await createVerse({ ...data, position_x: x, position_y: y });
       }
       setShowVerseSidebar(false);
       setSelectedVerse(null);
     },
-    [selectedVerse, updateVerse, createVerse]
+    [selectedVerse, updateVerse, createVerse, screenToFlowPosition]
   );
 
   const handleDeleteVerse = useCallback(async () => {
