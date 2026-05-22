@@ -30,13 +30,44 @@ const VERSE_TYPES: { value: VerseType; label: string }[] = [
 ];
 
 /**
+ * Try to extract a bible book name or abbreviation from the start of the input.
+ * Returns the matching book full name and the remaining string.
+ */
+function extractBookPrefix(input: string): { bookName?: string; remaining: string } {
+  const trimmed = input.trim();
+  
+  // Sort books by name/abbrev length descending to prevent partial matches (e.g., '1 John' matching '1')
+  const sortedBooks = [...BIBLE_BOOKS].sort((a, b) => {
+    const lenA = Math.max(a.name.length, a.abbrev.length);
+    const lenB = Math.max(b.name.length, b.abbrev.length);
+    return lenB - lenA;
+  });
+
+  for (const b of sortedBooks) {
+    const namePattern = new RegExp(`^${b.name}\\b`, 'i');
+    const abbrevPattern = new RegExp(`^${b.abbrev}\\b`, 'i');
+
+    if (namePattern.test(trimmed)) {
+      return { bookName: b.name, remaining: trimmed.replace(namePattern, '').trim() };
+    }
+    if (abbrevPattern.test(trimmed)) {
+      return { bookName: b.name, remaining: trimmed.replace(abbrevPattern, '').trim() };
+    }
+  }
+
+  return { remaining: trimmed };
+}
+
+/**
  * Parse a custom verse selection string like "1:1, 1:3, 2:2, 5:1-5, 10:21-25"
- * Returns an array of VerseSelection objects or an error string.
+ * optionally prefixed with a book name, like "Genesis 1:1, 1:3, 2:2, 5:1-5, 10:21-25"
+ * Returns an array of VerseSelection objects and optional parsedBook, or an error string.
  */
 function parseCustomVerseInput(
   input: string
-): { ok: true; selections: VerseSelection[] } | { ok: false; error: string } {
-  const raw = input.trim();
+): { ok: true; selections: VerseSelection[]; parsedBook?: string } | { ok: false; error: string } {
+  const { bookName, remaining } = extractBookPrefix(input);
+  const raw = remaining.trim();
   if (!raw) return { ok: false, error: 'Please enter at least one verse reference.' };
 
   const parts = raw.split(/\s*,\s*/);
@@ -46,8 +77,11 @@ function parseCustomVerseInput(
     const p = part.trim();
     if (!p) continue;
 
+    // Clean up spaces within reference, e.g. " 5 : 1 - 5 " -> "5:1-5"
+    const cleanPart = p.replace(/\s+/g, '');
+
     // Match patterns like: 1:1, 1:1-3
-    const rangeMatch = p.match(/^(\d+):(\d+)(?:-(\d+))?$/);
+    const rangeMatch = cleanPart.match(/^(\d+):(\d+)(?:-(\d+))?$/);
     if (!rangeMatch) {
       return { ok: false, error: `Invalid reference "${p}". Use format ch:v or ch:v-v (e.g. 3:16, 5:1-5).` };
     }
@@ -67,8 +101,9 @@ function parseCustomVerseInput(
     return { ok: false, error: 'No valid references found.' };
   }
 
-  return { ok: true, selections };
+  return { ok: true, selections, parsedBook: bookName };
 }
+
 
 
 export default function VerseSidebar({ verse, onSave, onDelete, onClose }: VerseSidebarProps) {
@@ -148,6 +183,11 @@ export default function VerseSidebar({ verse, onSave, onDelete, onClose }: Verse
     }
     setCustomError('');
 
+    if (parsed.parsedBook && parsed.parsedBook !== book) {
+      setBook(parsed.parsedBook);
+      return;
+    }
+
     setIsLoadingText(true);
     fetchKjvCustomVerses(book, parsed.selections)
       .then((text) => setVerseText(text ?? ''))
@@ -196,7 +236,7 @@ export default function VerseSidebar({ verse, onSave, onDelete, onClose }: Verse
 
       // Use chapter=0, verse_start=0, verse_end=null as sentinels for custom selection
       onSave({
-        book,
+        book: parsed.parsedBook || book,
         chapter: 0,
         verse_start: 0,
         verse_end: null,

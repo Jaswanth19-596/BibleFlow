@@ -124,7 +124,7 @@ export default function TopicGraphView() {
     if (verses.length === 0) return;
 
     const oldFormatVerses = verses.filter(
-      (v) => v.text && !v.text.includes('[') && v.chapter > 0
+      (v) => v.text && !/^\[\d+:\d+\]/.test(v.text.trim()) && v.chapter > 0
     );
     if (oldFormatVerses.length === 0) return;
 
