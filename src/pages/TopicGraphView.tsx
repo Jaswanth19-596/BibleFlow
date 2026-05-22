@@ -19,6 +19,7 @@ import { useTopicLinks } from '@/hooks/useTopicLinks';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Verse, VerseType, ConnectionType, Entity, EntityMentionWithEntity, EntityMentionContext } from '@/lib/types';
 import { getMentionsByVerse, createEntityMention, deleteEntityMention, subscribeToEntityMentions } from '@/lib/supabase';
+import { fetchKjvVerseRange } from '@/lib/bibleApi';
 
 export default function TopicGraphView() {
   const { id } = useParams<{ id: string }>();
@@ -117,6 +118,40 @@ export default function TopicGraphView() {
       setTopicName(topic.name);
     }
   }, [topic]);
+
+  // ─── Migrate old verse text to new [ch:v] per-line format ───────────────────
+  useEffect(() => {
+    if (verses.length === 0) return;
+
+    const oldFormatVerses = verses.filter(
+      (v) => v.text && !v.text.includes('[') && v.chapter > 0
+    );
+    if (oldFormatVerses.length === 0) return;
+
+    const migrateVerse = async (v: Verse) => {
+      try {
+        const newText = await fetchKjvVerseRange(
+          v.book,
+          v.chapter,
+          v.verse_start,
+          v.verse_end
+        );
+        if (newText && newText !== v.text) {
+          await updateVerse(v.id, { text: newText });
+        }
+      } catch {
+        // best-effort, ignore failures
+      }
+    };
+
+    // Run migrations sequentially to avoid hammering the worker
+    (async () => {
+      for (const v of oldFormatVerses) {
+        await migrateVerse(v);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verses.map((v) => v.id).join(',')]); // run when verse list changes, not on every render
 
   const handleSaveVerse = useCallback(
     async (data: {
