@@ -44,7 +44,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
     if (type === 'fetchKjvVerseRange') {
       const { book, chapter, verseStart, verseEnd } = payload;
       const data = await getKjvData();
-      
+
       if (!data || !data.verses) {
         self.postMessage({ jobId, result: null });
         return;
@@ -61,8 +61,42 @@ self.addEventListener('message', async (event: MessageEvent) => {
       );
 
       if (foundVerses.length > 0) {
-        const text = foundVerses.map(v => v.text.replace(/^[¶\s]+/, '').replace(/[‹›]/g, '')).join(' ');
+        const text = foundVerses
+          .map(v => `[${v.chapter}:${v.verse}] ${v.text.replace(/^[¶\s]+/, '').replace(/[‹›]/g, '')}`.trim())
+          .join('\n');
         self.postMessage({ jobId, result: text });
+      } else {
+        self.postMessage({ jobId, result: null });
+      }
+
+    } else if (type === 'fetchKjvCustomVerses') {
+      // payload.selections: Array<{ chapter: number; verseStart: number; verseEnd: number }>
+      const { book, selections } = payload as {
+        book: string;
+        selections: { chapter: number; verseStart: number; verseEnd: number }[];
+      };
+      const data = await getKjvData();
+      if (!data || !data.verses) {
+        self.postMessage({ jobId, result: null });
+        return;
+      }
+      const bookLower = book.toLowerCase();
+      const lines: string[] = [];
+      for (const sel of selections) {
+        const endV = sel.verseEnd >= sel.verseStart ? sel.verseEnd : sel.verseStart;
+        const found = data.verses.filter(
+          v =>
+            v.book_name.toLowerCase() === bookLower &&
+            v.chapter === sel.chapter &&
+            v.verse >= sel.verseStart &&
+            v.verse <= endV
+        );
+        for (const v of found) {
+          lines.push(`[${v.chapter}:${v.verse}] ${v.text.replace(/^[¶\s]+/, '').replace(/[‹›]/g, '').trim()}`);
+        }
+      }
+      if (lines.length > 0) {
+        self.postMessage({ jobId, result: lines.join('\n') });
       } else {
         self.postMessage({ jobId, result: null });
       }
@@ -71,3 +105,4 @@ self.addEventListener('message', async (event: MessageEvent) => {
     self.postMessage({ jobId, error: err instanceof Error ? err.message : 'Unknown error in worker' });
   }
 });
+

@@ -7,11 +7,11 @@
 4. **Backend as a Service (BaaS)**: Supabase (PostgreSQL + Real-time subscriptions). Handles the database (`topics`, `verses`, `connections`, `topic_links`) and provides real-time updates so changes are instantly synced across clients.
 5. **Routing**: React Router DOM v6 for client-side routing.
 6. **Styling**: Tailwind CSS 3.4 for utility-first, responsive, and customizable styling.
-7. **External APIs**: `bible-api.com` is used for fetching KJV Bible texts securely and freely without requiring API keys.
+7. **External APIs**: `bible-api.com` is used for fetching KJV Bible texts securely and freely without requiring API keys. Verse text is now stored as multi-line strings with `[ch:v]` prefixes (e.g. `[3:16] For God so loved...`) enabling per-verse line display.
 
 ## Core Entities & Data Models
 - **Topics**: Represents a theological concept or study theme (e.g., "Faith", "Salvation"). Has a name, description, and color.
-- **Verses (Nodes)**: Represents a specific Bible verse. Belongs to a Topic. Contains the biblical text, reference (book, chapter, verse), a personalized note, and its XY coordinates for the graph. They have types: `main`, `supporting`, `contrast`, `context`.
+- **Verses (Nodes)**: Represents a specific Bible verse or custom verse selection. Belongs to a Topic. Contains the biblical text (multi-line `[ch:v] text` format), reference (book, chapter, verse_start, verse_end), a personalized note, and its XY coordinates for the graph. `chapter=0` is a sentinel value indicating a custom (non-contiguous) verse selection. They have types: `main`, `supporting`, `contrast`, `context`.
 - **Connections (Edges)**: Represents relationships between verses within a topic graph. Types include `supports`, `contrasts`, `explains`, `fulfills`, `references`.
 - **Topic Links (Cross-Topic Edges)**: Represents macroscopic relationships between overarching Topics (e.g., Topic A leads to Topic B).
 - **Entities**: Represents biblical people, places, nations, events, objects, or concepts. Has a type, description, optional metadata, `timeline_period_id` (nullable FK to timeline_periods), `atlas_x`/`atlas_y` for positioning on the People Atlas canvas, and `lat`/`lng` (nullable) for geographical coordinates on the Biblical Map.
@@ -46,7 +46,7 @@
 3. **Semantic Verse Connections**: Draw directed lines to define doctrinal relationships (supports, contrasts, explains, fulfills, references).
 4. **Contextual Entity Tagging**: Tag people, places, events, and concepts directly onto verses to build an interconnected biblical knowledge graph.
 5. **Topic Network View**: A global visualization of how broad theological topics interrelate.
-6. **Bible Integration**: Auto-fetches KJV text, validates verse structures, supports verse ranges.
+6. **Bible Integration**: Auto-fetches KJV text, validates verse structures, supports verse ranges and custom non-contiguous verse selections (Python-style fancy indexing). Verse text is stored as multi-line `[ch:v] text` format and rendered line-by-line in nodes with superscript verse numbers.
 7. **Global Search & Discovery**: Search through all verses and personal notes with debounced grouping.
 8. **Export & Sharing**: Export any topic graph as a high-quality PNG image.
 9. **Dark Mode**: Complete support for system-preference dark mode.

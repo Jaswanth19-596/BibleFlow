@@ -45,3 +45,31 @@ export async function fetchKjvVerseRange(
     });
   });
 }
+
+export interface VerseSelection {
+  chapter: number;
+  verseStart: number;
+  verseEnd: number;
+}
+
+/**
+ * Fetch KJV text for a custom list of verse selections (single verses and/or ranges,
+ * possibly spanning multiple chapters). Returns a multi-line string where each line
+ * is prefixed with [ch:v].
+ */
+export async function fetchKjvCustomVerses(
+  book: string,
+  selections: VerseSelection[]
+): Promise<string | null> {
+  const w = initWorker();
+  const jobId = currentJobId++;
+
+  return new Promise((resolve, reject) => {
+    pendingJobs.set(jobId, { resolve, reject });
+    w.postMessage({
+      jobId,
+      type: 'fetchKjvCustomVerses',
+      payload: { book, selections }
+    });
+  });
+}

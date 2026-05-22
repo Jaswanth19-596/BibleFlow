@@ -70,8 +70,12 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
     return parts.map((part) => ({ segment: part, match: part.toLowerCase() === query.toLowerCase() }));
   };
 
-  const renderVerseText = (text: string) => {
-    // If there is a search query, we do a simpler segment-based render with highlights
+  /**
+   * Renders a single line of verse text (the part AFTER the [ch:v] prefix, or
+   * the whole line when there is no prefix) with word-click and search-highlight support.
+   */
+  const renderLineWords = (text: string) => {
+    // If there is a search query, do a simpler segment-based render with highlights
     if (searchQuery) {
       const segments = splitByQuery(text, searchQuery);
       return segments.map((seg, i) =>
@@ -100,7 +104,6 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
     const wordCounts = new Map<string, number>();
 
     return tokens.map((token, i) => {
-      // Preserve raw whitespace as-is
       if (/^\s+$/.test(token) || token === '') {
         return <span key={i}>{token}</span>;
       }
@@ -112,19 +115,15 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
       wordCounts.set(clean, occurrence + 1);
 
       const anchorKey = buildAnchorKey(clean, occurrence);
-      const isPending = pendingAnchorKey === anchorKey || pendingAnchorKey === clean; // match pure format for legacy pending
-      
+      const isPending = pendingAnchorKey === anchorKey || pendingAnchorKey === clean;
+
       const highlight = highlights.find(h => {
         const parsed = parseAnchorKey(h.word);
         if (!parsed) return false;
-        // if legacy anchor (-1), match all instances of the word. Otherwise exact match index and word.
-        if (parsed.index === -1) {
-          return parsed.word === clean;
-        }
+        if (parsed.index === -1) return parsed.word === clean;
         return parsed.index === occurrence && parsed.word === clean;
       });
 
-      // Pending anchor (user clicked this word, not yet linked)
       if (isPending) {
         return (
           <span
@@ -145,7 +144,6 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
         );
       }
 
-      // Established anchor (from DB connection)
       if (highlight) {
         return (
           <span
@@ -166,7 +164,6 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
         );
       }
 
-      // Regular word — hoverable to hint clickability
       const isHovered = hoveredWord === anchorKey;
       return (
         <span
@@ -182,6 +179,35 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
           title="Click to anchor this word when creating a connection"
         >
           {token}
+        </span>
+      );
+    });
+  };
+
+  const renderVerseText = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, lineIdx) => {
+      const m = line.match(/^\[(\d+):(\d+)\]\s*(.*)/);
+      if (m) {
+        const chapterNum = m[1];
+        const verseNum = m[2];
+        const body = m[3];
+        return (
+          <span key={lineIdx} className="block">
+            <sup
+              className="text-indigo-500 dark:text-indigo-400 font-bold mr-0.5 select-none"
+              style={{ fontSize: '0.6em', verticalAlign: 'super' }}
+            >
+              {chapterNum}:{verseNum}
+            </sup>
+            {renderLineWords(body)}
+          </span>
+        );
+      }
+      // Fallback: plain line (no prefix)
+      return (
+        <span key={lineIdx} className="block">
+          {renderLineWords(line)}
         </span>
       );
     });
@@ -217,14 +243,14 @@ function VerseNodeComponent({ data, selected }: VerseNodeProps) {
         </span>
       </div>
 
-      {/* Verse text with individually clickable words */}
+      {/* Verse text — rendered line-by-line, each line has a [ch:v] superscript */}
       {verse.text && (
-        <p
-          className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed mb-1"
+        <div
+          className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed mb-1 space-y-0.5"
           style={{ userSelect: 'none' }}
         >
-          &ldquo;{renderVerseText(verse.text)}&rdquo;
-        </p>
+          {renderVerseText(verse.text)}
+        </div>
       )}
 
       {/* Pending anchor badge */}

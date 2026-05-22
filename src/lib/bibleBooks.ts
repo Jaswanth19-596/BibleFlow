@@ -133,6 +133,10 @@ export function validateVerseRange(book: string, chapter: number, verseStart: nu
 
 export function formatVerseRef(book: string, chapter: number, verseStart: number, verseEnd?: number | null): string {
   const abbrev = getBookAbbrev(book);
+  // chapter === 0 signals a custom (non-contiguous) verse selection
+  if (chapter === 0) {
+    return `${abbrev} (custom)`;
+  }
   if (verseEnd && verseEnd !== verseStart) {
     return `${abbrev} ${chapter}:${verseStart}-${verseEnd}`;
   }
