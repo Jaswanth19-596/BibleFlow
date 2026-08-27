@@ -14,6 +14,31 @@ export interface BiblicalPlace {
   importance?: 1 | 2 | 3;
 }
 
+/**
+ * A single mappable location. Scripture frequently uses several names for one
+ * site (or mentions a landmark within the same city), so the raw source
+ * records are grouped before they reach the map or search UI.
+ */
+export interface BiblicalPlaceCluster {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  importance: 1 | 2 | 3;
+  references: string[];
+  note?: string;
+  aliases: string[];
+  searchText: string;
+  /** Book names represented by at least one source record at this location. */
+  books: string[];
+  /** Source references grouped by book, so the map can filter without guessing from names. */
+  referencesByBook: Record<string, string[]>;
+  /** Biblical names used for this location in each book. */
+  namesByBook: Record<string, string[]>;
+  /** Number of source records for each book; used to scale the density halo. */
+  mentionCountByBook: Record<string, number>;
+}
+
 export const BIBLICAL_PLACES: BiblicalPlace[] = [
   { name: "Abana", lat: 33.545097, lng: 36.224661, verses: "2 Kgs 5:12" },
   { name: "Abarim", lat: 31.76135780447535, lng: 35.74614824478083, verses: "Num 27:12", note: "Also: Mount Nebo" },
@@ -1299,6 +1324,80 @@ export const BIBLICAL_PLACES: BiblicalPlace[] = [
   { name: "Pool of Bethesda", lat: 31.78, lng: 35.24, verses: "John 5:2", note: "In Jerusalem, near Sheep Gate" },
   { name: "Pool of Siloam", lat: 31.77, lng: 35.23, verses: "John 9:7", note: "In Jerusalem, southern end" },
   { name: "Via Dolorosa", lat: 31.78, lng: 35.23, verses: "John 19:17", note: "Path of Jesus to crucifixion in Jerusalem" },
+  // OpenBible's current geocoding catalog additions (CC-BY 4.0). Keep only
+  // identifiable locations that have both a coordinate and a Bible verse.
+  { name: "Abel-mizraim", lat: 31.914888, lng: 35.530445, verses: "Gen 50:11" },
+  { name: "Addon", lat: 32.543333, lng: 44.422222, verses: "Ezra 2:59" },
+  { name: "Allon", lat: 32.72113, lng: 35.41064, verses: "Josh 19:33" },
+  { name: "Atad", lat: 31.914888, lng: 35.530445, verses: "Gen 50:10" },
+  { name: "Athach", lat: 31.61593, lng: 34.8783, verses: "1 Sam 30:30" },
+  { name: "Atroth-beth-joab", lat: 31.704306, lng: 35.207639, verses: "1 Chr 2:54" },
+  { name: "Beth-ashbea", lat: 31.4558, lng: 34.9098, verses: "1 Chr 4:21" },
+  { name: "Bether 1", lat: 31.73, lng: 35.135556, verses: "Sng 2:17" },
+  { name: "Beth-gader", lat: 31.632629, lng: 35.092145, verses: "1 Chr 2:51" },
+  { name: "Caleb Ephrathah", lat: 31.704306, lng: 35.207639, verses: "1 Chr 2:24" },
+  { name: "City of David", lat: 31.773611, lng: 35.235556, verses: "2 Sam 5:7" },
+  { name: "City of Palms 1", lat: 31.871719, lng: 35.444564, verses: "Deut 34:3" },
+  { name: "City of Palms 2", lat: 31.871719, lng: 35.444564, verses: "Judg 1:16" },
+  { name: "East Square", lat: 31.776667, lng: 35.234167, verses: "2 Chr 29:4" },
+  { name: "Eden 1", lat: 40.383333, lng: 44.95, verses: "Gen 2:8" },
+  { name: "Eden 2", lat: 36.7014, lng: 38.0865, verses: "2 Kgs 19:12" },
+  { name: "Eglath-shelishiyah", lat: 31.036904, lng: 35.487657, verses: "Isa 15:5" },
+  { name: "Elkosh", lat: 33.12139, lng: 35.33833, verses: "Nahum 1:1" },
+  { name: "Ezel", lat: 31.823113, lng: 35.230718, verses: "1 Sam 20:19" },
+  { name: "Gadara", lat: 32.655998, lng: 35.679352, verses: "Matt 8:28" },
+  { name: "Ge-harashim", lat: 31.95, lng: 34.9, verses: "1 Chr 4:14" },
+  { name: "Gerasa", lat: 32.272281, lng: 35.891397, verses: "Mark 5:1" },
+  { name: "Gibbar", lat: 31.847451, lng: 35.183351, verses: "Ezra 2:20" },
+  { name: "Gibea", lat: 31.45015, lng: 35.053525, verses: "1 Chr 2:49" },
+  { name: "Goiim 1", lat: 33.511112, lng: 36.30639, verses: "Gen 14:1" },
+  { name: "Goiim 2", lat: 32.76, lng: 35.527, verses: "Josh 12:23" },
+  { name: "Gomer", lat: 39, lng: 32, verses: "Ezek 38:6" },
+  { name: "Gulloth-mayim", lat: 31.43209, lng: 35.01485, verses: "Josh 15:19" },
+  { name: "Harim", lat: 32.188167, lng: 34.806703, verses: "Ezra 2:32" },
+  { name: "Hushah", lat: 31.71181, lng: 35.13242, verses: "2 Sam 21:18" },
+  { name: "Ir-moab", lat: 31.280864, lng: 35.759526, verses: "Num 22:36" },
+  { name: "Ir-nahash", lat: 31.615681, lng: 34.921722, verses: "1 Chr 4:12" },
+  { name: "Jorkeam", lat: 31.461967, lng: 35.118489, verses: "1 Chr 2:44" },
+  { name: "Lower Gulloth", lat: 31.43209, lng: 35.01485, verses: "Josh 15:19" },
+  { name: "Lower Pool", lat: 31.776667, lng: 35.234167, verses: "Isa 22:9" },
+  { name: "Machbenah", lat: 31.554151, lng: 34.896797, verses: "1 Chr 2:49" },
+  { name: "Madmen", lat: 31.291821, lng: 35.704811, verses: "Jer 48:2" },
+  { name: "Magbish", lat: 31.63816, lng: 34.95317, verses: "Ezra 2:30" },
+  { name: "Meronoth", lat: 31.885136, lng: 35.216417, verses: "1 Chr 27:30" },
+  { name: "Mezahab", lat: 31.806601, lng: 36.050752, verses: "Gen 36:39" },
+  { name: "Middle Gate", lat: 31.776667, lng: 35.234167, verses: "Jer 39:3" },
+  { name: "Misgab", lat: 31.180556, lng: 35.701389, verses: "Jer 48:1" },
+  { name: "Mount Bashan", lat: 32.666667, lng: 36.733333, verses: "Ps 68:15" },
+  { name: "Nahor", lat: 36.864444, lng: 39.032778, verses: "Gen 24:10" },
+  { name: "Nehelam", lat: 32.75, lng: 36.240833, verses: "Jer 29:24" },
+  { name: "North", lat: 36.226691, lng: 36.171743, verses: "Dan 11:6" },
+  { name: "North Gate", lat: 31.776667, lng: 35.234167, verses: "1 Chr 26:14" },
+  { name: "Old Pool", lat: 31.776667, lng: 35.234167, verses: "Isa 22:11" },
+  { name: "Parbar", lat: 31.776667, lng: 35.234167, verses: "1 Chr 26:18" },
+  { name: "Parvaim", lat: 16.871944, lng: 43.711389, verses: "2 Chr 3:6" },
+  { name: "Pishon", lat: 17.119722, lng: 42.416389, verses: "Gen 2:11" },
+  { name: "Senaah", lat: 31.9472, lng: 35.39974, verses: "Ezra 2:35" },
+  { name: "Shaalbon", lat: 31.86981, lng: 34.98714, verses: "2 Sam 23:32" },
+  { name: "Sheshach", lat: 32.543333, lng: 44.422222, verses: "Jer 25:26" },
+  { name: "South 1", lat: 31.244722, lng: 34.840833, verses: "Zech 7:7" },
+  { name: "South 2", lat: 15.348333, lng: 44.206389, verses: "Matt 12:42" },
+  { name: "South 3", lat: 31.1825, lng: 29.8965, verses: "Dan 11:5" },
+  { name: "South Gate", lat: 31.776667, lng: 35.234167, verses: "1 Chr 26:15" },
+  { name: "Straight Street", lat: 33.509167, lng: 36.311389, verses: "Acts 9:11" },
+  { name: "Tabbur-erez", lat: 32.199444, lng: 35.272778, verses: "Judg 9:37" },
+  { name: "The Lord Will Provide", lat: 31.777778, lng: 35.235556, verses: "Gen 22:14" },
+  { name: "Trogyllium", lat: 37.659431, lng: 27.003279, verses: "Acts 20:15" },
+  { name: "Upper Gulloth", lat: 31.43209, lng: 35.01485, verses: "Josh 15:19" },
+  { name: "Upper Pool", lat: 31.776667, lng: 35.234167, verses: "2 Kgs 18:17" },
+  { name: "Valley of Decision", lat: 31.780278, lng: 35.24, verses: "Joel 3:14" },
+  { name: "Waters of Jericho", lat: 31.870489, lng: 35.444761, verses: "Josh 16:1" },
+  { name: "Waters of Merom", lat: 32.978889, lng: 35.437778, verses: "Josh 11:5" },
+  { name: "Way of the Red Sea", lat: 29.727222, lng: 34.998333, verses: "Num 14:25" },
+  { name: "West Gate", lat: 31.776667, lng: 35.234167, verses: "1 Chr 26:16" },
+  { name: "Wilderness of Maon", lat: 31.409448, lng: 35.133839, verses: "1 Sam 23:24" },
+  { name: "Wilderness of Sinai", lat: 28.539722, lng: 33.973333, verses: "Ex 19:1" },
+  { name: "Wilderness of Ziph", lat: 31.47475, lng: 35.13514, verses: "1 Sam 23:14" },
 ];
 
 // ─── Importance Tiers ───────────────────────────────────────────────
@@ -1347,8 +1446,140 @@ BIBLICAL_PLACES.forEach(p => {
   else p.importance = 3;
 });
 
-// Pre-computed lowercase index for fast search
-export const BIBLICAL_PLACES_INDEX = BIBLICAL_PLACES.map((p, i) => ({
-  lower: p.name.toLowerCase(),
-  idx: i,
-}));
+// ─── Map-ready locations ───────────────────────────────────────────────────
+// OpenBible's data is deliberately granular: Jerusalem, Zion, Golgotha and a
+// number of gates, for example, share a coordinate. Drawing every row creates
+// a confusing stack of pins, so group exact-coordinate records into one
+// location while retaining every biblical name as a searchable alternate.
+const PREFERRED_CLUSTER_NAMES = new Set([
+  'jerusalem', 'bethlehem 1', 'nazareth', 'capernaum', 'jericho', 'hebron',
+  'bethel 1', 'samaria', 'damascus', 'nineveh', 'babylon', 'babel', 'tyre',
+  'sidon', 'ur', 'susa', 'alexandria', 'antioch', 'ephesus', 'corinth',
+  'athens', 'rome', 'sea of galilee', 'dead sea', 'mount sinai',
+  'mount carmel', 'mount hermon', 'mount of olives', 'mount nebo',
+  'garden of eden', 'kadesh-barnea', 'gibeon', 'shiloh', 'shechem',
+  'beersheba', 'gaza', 'megiddo', 'caesarea', 'caesarea philippi',
+  'bethsaida', 'cana', 'emmaus', 'tarsus', 'malta', 'patmos',
+]);
+
+const cleanPlaceName = (name: string) => name.replace(/\s+\d+$/, '');
+const coordinateKey = (place: BiblicalPlace) => `${place.lat.toFixed(5)},${place.lng.toFixed(5)}`;
+
+// The place source uses traditional abbreviations rather than the app's longer
+// book abbreviations (for example, "Ex" and "Sng"). Keep this mapping next to
+// the source data so filtering is based on the cited book, not name matching.
+const BOOK_BY_REFERENCE_PREFIX: Record<string, string> = {
+  '1 Chr': '1 Chronicles', '1 Kgs': '1 Kings', '1 Sam': '1 Samuel',
+  '2 Chr': '2 Chronicles', '2 Kgs': '2 Kings', '2 Sam': '2 Samuel',
+  '2 Tim': '2 Timothy',
+  Acts: 'Acts', Amos: 'Amos', Col: 'Colossians', Dan: 'Daniel',
+  Deut: 'Deuteronomy', Est: 'Esther', Ex: 'Exodus', Ezek: 'Ezekiel',
+  Ezra: 'Ezra', Gen: 'Genesis', Hab: 'Habakkuk', Hos: 'Hosea',
+  Isa: 'Isaiah', Jer: 'Jeremiah', Job: 'Job', Joel: 'Joel', John: 'John',
+  Josh: 'Joshua', Judg: 'Judges', Luke: 'Luke', Mark: 'Mark', Matt: 'Matthew',
+  Mic: 'Micah', Nahum: 'Nahum', Neh: 'Nehemiah', Num: 'Numbers', Obad: 'Obadiah',
+  Ps: 'Psalms', Rev: 'Revelation', Rom: 'Romans', Ruth: 'Ruth',
+  Sng: 'Song of Solomon', Titus: 'Titus', Zech: 'Zechariah', Zeph: 'Zephaniah',
+};
+
+const getBookForReference = (reference: string) =>
+  Object.entries(BOOK_BY_REFERENCE_PREFIX).find(([prefix]) => reference.startsWith(`${prefix} `))?.[1];
+
+const addToGroupedList = (group: Record<string, string[]>, key: string, value: string) => {
+  const values = group[key] ?? [];
+  if (!values.includes(value)) values.push(value);
+  group[key] = values;
+};
+
+const coordinateGroups = new Map<string, BiblicalPlace[]>();
+for (const place of BIBLICAL_PLACES) {
+  const key = coordinateKey(place);
+  coordinateGroups.set(key, [...(coordinateGroups.get(key) ?? []), place]);
+}
+
+const coordinateClusters: BiblicalPlaceCluster[] = Array.from(coordinateGroups.values())
+  .map((group, index) => {
+    const sorted = [...group].sort((a, b) => {
+      const aPreferred = PREFERRED_CLUSTER_NAMES.has(a.name.toLowerCase()) ? 0 : 1;
+      const bPreferred = PREFERRED_CLUSTER_NAMES.has(b.name.toLowerCase()) ? 0 : 1;
+      if (aPreferred !== bPreferred) return aPreferred - bPreferred;
+      if ((a.importance ?? 3) !== (b.importance ?? 3)) return (a.importance ?? 3) - (b.importance ?? 3);
+      const aNumbered = /\s+\d+$/.test(a.name) ? 1 : 0;
+      const bNumbered = /\s+\d+$/.test(b.name) ? 1 : 0;
+      if (aNumbered !== bNumbered) return aNumbered - bNumbered;
+      return a.name.localeCompare(b.name);
+    });
+    const primary = sorted[0];
+    const aliases = Array.from(new Set(sorted.map(place => cleanPlaceName(place.name))))
+      .filter(name => name.toLowerCase() !== cleanPlaceName(primary.name).toLowerCase());
+    const references = Array.from(new Set(sorted.map(place => place.verses)));
+    const notes = sorted.map(place => place.note).filter((note): note is string => Boolean(note));
+    const referencesByBook: Record<string, string[]> = {};
+    const namesByBook: Record<string, string[]> = {};
+    const mentionCountByBook: Record<string, number> = {};
+
+    sorted.forEach(place => {
+      const book = getBookForReference(place.verses);
+      if (!book) return;
+      addToGroupedList(referencesByBook, book, place.verses);
+      addToGroupedList(namesByBook, book, cleanPlaceName(place.name));
+      mentionCountByBook[book] = (mentionCountByBook[book] ?? 0) + 1;
+    });
+
+    return {
+      id: `biblical-${index}`,
+      name: cleanPlaceName(primary.name),
+      lat: primary.lat,
+      lng: primary.lng,
+      importance: Math.min(...sorted.map(place => place.importance ?? 3)) as 1 | 2 | 3,
+      references,
+      note: notes[0],
+      aliases,
+      searchText: [primary.name, ...aliases, ...references, ...notes].join(' ').toLowerCase(),
+      books: Object.keys(referencesByBook),
+      referencesByBook,
+      namesByBook,
+      mentionCountByBook,
+    };
+  })
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+// A handful of source rows use slightly different approximate coordinates for
+// the very same named landmark. Merge only same-name locations that are within
+// roughly two kilometres; names shared by genuinely different towns (such as
+// Antioch) remain distinct.
+const nearbySameNameClusters = new Map<string, BiblicalPlaceCluster[]>();
+for (const cluster of coordinateClusters) {
+  const key = cluster.name.toLowerCase();
+  const candidates = nearbySameNameClusters.get(key) ?? [];
+  const existing = candidates.find(candidate =>
+    Math.abs(candidate.lat - cluster.lat) < 0.02 && Math.abs(candidate.lng - cluster.lng) < 0.02
+  );
+  if (!existing) {
+    candidates.push({ ...cluster });
+    nearbySameNameClusters.set(key, candidates);
+    continue;
+  }
+  existing.importance = Math.min(existing.importance, cluster.importance) as 1 | 2 | 3;
+  existing.references = Array.from(new Set([...existing.references, ...cluster.references]));
+  existing.aliases = Array.from(new Set([...existing.aliases, ...cluster.aliases]));
+  existing.searchText = `${existing.searchText} ${cluster.searchText}`;
+  existing.books = Array.from(new Set([...existing.books, ...cluster.books]));
+  for (const [book, references] of Object.entries(cluster.referencesByBook)) {
+    for (const reference of references) addToGroupedList(existing.referencesByBook, book, reference);
+  }
+  for (const [book, names] of Object.entries(cluster.namesByBook)) {
+    for (const name of names) addToGroupedList(existing.namesByBook, book, name);
+  }
+  for (const [book, mentions] of Object.entries(cluster.mentionCountByBook)) {
+    existing.mentionCountByBook[book] = (existing.mentionCountByBook[book] ?? 0) + mentions;
+  }
+}
+
+export const BIBLICAL_PLACE_CLUSTERS = Array.from(nearbySameNameClusters.values())
+  .flat()
+  .sort((a, b) => a.name.localeCompare(b.name))
+  .map((cluster, index) => ({ ...cluster, id: `biblical-${index}` }));
+
+export const BIBLICAL_PLACE_COUNT = BIBLICAL_PLACE_CLUSTERS.length;
+export const BIBLICAL_PLACE_SOURCE_COUNT = BIBLICAL_PLACES.length;

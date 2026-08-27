@@ -43,6 +43,8 @@ export function useEntities() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['entities'] });
       queryClient.invalidateQueries({ queryKey: ['entity-mentions'] });
+      queryClient.invalidateQueries({ queryKey: ['entity-relationships-all'] });
+      queryClient.invalidateQueries({ queryKey: ['entity-relationships'] });
     },
   });
 

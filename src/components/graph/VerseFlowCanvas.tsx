@@ -280,7 +280,62 @@ export default function VerseFlowCanvas({
   // Sync nodes when verses / connections / pendingAnchor change
   useEffect(() => {
     const highlightsMap = buildHighlightsMap(connections);
-    setNodes(buildNodes(verses, highlightsMap));
+    const nextNodes = buildNodes(verses, highlightsMap);
+
+    setNodes((prevNodes) => {
+      const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
+      return nextNodes.map((nextNode) => {
+        const prevNode = prevMap.get(nextNode.id);
+        if (!prevNode) return nextNode;
+
+        const posChanged =
+          prevNode.position.x !== nextNode.position.x ||
+          prevNode.position.y !== nextNode.position.y;
+        const selectedChanged = prevNode.selected !== nextNode.selected;
+
+        const prevData = prevNode.data as any;
+        const nextData = nextNode.data as any;
+
+        const textChanged = prevData.verse?.text !== nextData.verse?.text;
+        const noteChanged = prevData.verse?.note !== nextData.verse?.note;
+        const typeChanged = prevData.verse?.type !== nextData.verse?.type;
+        const highlightsChanged =
+          JSON.stringify(prevData.connectionHighlights) !==
+          JSON.stringify(nextData.connectionHighlights);
+        const searchChanged =
+          prevData.searchQuery !== nextData.searchQuery ||
+          prevData.isSearchMatch !== nextData.isSearchMatch;
+        const mentionsChanged =
+          prevData.entityMentions?.length !== nextData.entityMentions?.length;
+
+        // If nothing essential changed, keep the exact same node object reference
+        // to prevent React Flow from resetting internal parameters (dragging, sizes, widths).
+        if (
+          !posChanged &&
+          !selectedChanged &&
+          !textChanged &&
+          !noteChanged &&
+          !typeChanged &&
+          !highlightsChanged &&
+          !searchChanged &&
+          !mentionsChanged
+        ) {
+          return prevNode;
+        }
+
+        // Return a merged node object that preserves other internal React Flow state fields
+        return {
+          ...prevNode,
+          position: nextNode.position,
+          selected: nextNode.selected,
+          data: {
+            ...prevData,
+            ...nextData,
+            verse: nextData.verse, // ensure the latest verse instance is set
+          },
+        };
+      });
+    });
   }, [verses, connections, buildNodes, setNodes]);
 
   // Sync edges when connections / topicLinks change

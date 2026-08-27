@@ -1,429 +1,162 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Entity } from '@/lib/types';
-import { BIBLICAL_PLACES, BIBLICAL_PLACES_INDEX } from '@/data/biblicalPlaces';
+import { BiblicalPlaceCluster } from '@/data/biblicalPlaces';
+import { HistoricalMapSelection } from '@/data/biblicalTerritories';
+import { hasMappedHistoricalEvidence, searchHistoricalTerritories } from '@/lib/territorySearch';
 
 interface SearchResult {
+  id: string; name: string; description: string; lat: number; lng: number;
+  source: 'local' | 'biblical'; aliases?: string[];
+}
+
+interface TerritoryResult {
   id: string;
   name: string;
   description: string;
-  lat: number;
-  lng: number;
-  source: 'local' | 'biblical' | 'nominatim';
+  source: 'territory';
+  territory: HistoricalMapSelection;
+  isMapped: boolean;
 }
 
+type MapSearchResult = SearchResult | TerritoryResult;
+
 export interface SearchContext {
-  name: string;
-  description: string;
-  source: 'local' | 'biblical' | 'nominatim';
+  name: string; description: string; source: 'local' | 'biblical'; aliases?: string[];
 }
 
 interface MapSearchBarProps {
   places: Entity[];
+  biblicalPlaces: BiblicalPlaceCluster[];
+  selectedBook: string | null;
   onFlyTo: (lat: number, lng: number, zoom?: number, context?: SearchContext) => void;
+  onSelectTerritory: (territory: HistoricalMapSelection) => void;
 }
 
-export default function MapSearchBar({ places, onFlyTo }: MapSearchBarProps) {
+const biblicalDescription = (place: BiblicalPlaceCluster) => {
+  const references = place.references.slice(0, 3).join(' · ');
+  const aliases = place.aliases.slice(0, 2).join(', ');
+  return [references, aliases ? `Also known as ${aliases}` : ''].filter(Boolean).join(' — ');
+};
+
+const score = (place: BiblicalPlaceCluster, query: string) => {
+  const name = place.name.toLowerCase();
+  const aliases = place.aliases.map(alias => alias.toLowerCase());
+  if (name === query) return 0;
+  if (aliases.includes(query)) return 1;
+  if (name.startsWith(query)) return 2;
+  if (aliases.some(alias => alias.startsWith(query))) return 3;
+  if (name.includes(query)) return 4;
+  if (aliases.some(alias => alias.includes(query))) return 5;
+  return 6;
+};
+
+const matchesBiblicalPlace = (place: BiblicalPlaceCluster, query: string) => {
+  const names = [place.name, ...place.aliases].join(' ').toLowerCase();
+  // References are searchable (for example, "John 5:2"); descriptive notes
+  // are intentionally not, so a search for Jerusalem stays about Jerusalem.
+  const looksLikeReference = /\d|\b(gen|ex|lev|num|deut|josh|judg|sam|kgs|chr|ezra|neh|est|job|ps|prov|isa|jer|ezek|dan|hos|joel|amos|obad|jonah|mic|nah|hab|zeph|hag|zech|mal|matt|mark|luke|john|acts|rom|cor|gal|eph|phil|col|thess|tim|tit|philem|heb|jas|pet|rev)\b/.test(query);
+  return names.includes(query) || (looksLikeReference && place.references.join(' ').toLowerCase().includes(query));
+};
+
+export default function MapSearchBar({ places = [], biblicalPlaces = [], selectedBook, onFlyTo, onSelectTerritory }: MapSearchBarProps) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [isFocused, setIsFocused] = useState(false);
-
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  const results = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return [];
+    const saved: SearchResult[] = places
+      .filter(place => place.name.toLowerCase().includes(normalized) || place.description?.toLowerCase().includes(normalized))
+      .map(place => ({ id: `saved-${place.id}`, name: place.name, description: place.description || 'Saved study location', lat: place.lat!, lng: place.lng!, source: 'local' as const }));
+    const biblical: SearchResult[] = biblicalPlaces
+      .filter(place => matchesBiblicalPlace(place, normalized))
+      .sort((a, b) => score(a, normalized) - score(b, normalized) || a.name.localeCompare(b.name))
+      .slice(0, 12)
+      .map(place => {
+        const names = selectedBook ? place.namesByBook[selectedBook] : undefined;
+        const references = selectedBook ? place.referencesByBook[selectedBook] ?? [] : place.references;
+        return {
+          id: place.id,
+          name: names?.[0] ?? place.name,
+          description: references.length ? [references.slice(0, 3).join(' · '), names && names.length > 1 ? `Also known as ${names.slice(1, 3).join(', ')}` : ''].filter(Boolean).join(' — ') : biblicalDescription(place),
+          lat: place.lat,
+          lng: place.lng,
+          source: 'biblical' as const,
+          aliases: selectedBook ? names?.slice(1) : place.aliases,
+        };
+      })
+      .filter(place => !saved.some(savedPlace => savedPlace.name.toLowerCase() === place.name.toLowerCase()));
+    const territories: TerritoryResult[] = searchHistoricalTerritories(query).map(result => ({
+      id: `territory-${result.territory.id}`,
+      name: result.territory.name,
+      description: result.kind === 'territory'
+        ? `${result.territory.historicalRegion} · ${result.territory.confidence === 'source-isobands' ? 'source-backed confidence area' : 'source-backed historical outline'}`
+        : result.kind === 'sites'
+          ? `${result.territory.historicalRegion} · ${result.territory.sites.length} attested sites`
+          : 'Historical location remains unresolved',
+      source: 'territory' as const,
+      territory: result.territory,
+      isMapped: hasMappedHistoricalEvidence(result.territory),
+    }));
+    return [...saved, ...biblical, ...territories];
+  }, [biblicalPlaces, places, query, selectedBook]);
+
+  useEffect(() => setActiveIndex(-1), [query]);
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const close = (event: MouseEvent) => { if (!panelRef.current?.contains(event.target as Node)) setIsOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
   }, []);
 
-  // Search logic: local places first, then Nominatim
-  const doSearch = useCallback(
-    async (q: string) => {
-      if (!q.trim()) {
-        setResults([]);
-        setIsOpen(false);
-        return;
-      }
-
-      const lower = q.toLowerCase();
-
-      // 1. Search local (user-saved) places
-      const localResults: SearchResult[] = places
-        .filter(
-          p =>
-            p.name.toLowerCase().includes(lower) ||
-            (p.description && p.description.toLowerCase().includes(lower))
-        )
-        .map(p => ({
-          id: `local-${p.id}`,
-          name: p.name,
-          description: p.description || 'Saved place',
-          lat: p.lat!,
-          lng: p.lng!,
-          source: 'local' as const,
-        }));
-
-      // 2. Search built-in biblical places dictionary (instant, no network)
-      const biblicalResults: SearchResult[] = BIBLICAL_PLACES_INDEX
-        .filter(entry => entry.lower.includes(lower))
-        .slice(0, 10) // Limit to top 10 matches
-        .map(entry => {
-          const p = BIBLICAL_PLACES[entry.idx];
-          return {
-            id: `bible-${entry.idx}`,
-            name: p.name,
-            description: p.note || p.verses,
-            lat: p.lat,
-            lng: p.lng,
-            source: 'biblical' as const,
-          };
-        })
-        // Remove biblical results that duplicate local places (by name similarity)
-        .filter(br => !localResults.some(
-          lr => lr.name.toLowerCase() === br.name.toLowerCase()
-        ));
-
-      // Show local + biblical immediately
-      const immediateResults = [...localResults, ...biblicalResults];
-      setResults(immediateResults);
-      setIsOpen(true);
-      setActiveIndex(-1);
-
-      // 3. Fetch from Nominatim as fallback for modern/non-biblical places
-      setIsLoading(true);
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`,
-          {
-            headers: { 'Accept-Language': 'en' },
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const nominatimResults: SearchResult[] = data.map(
-            (item: { place_id: number; display_name: string; type: string; lat: string; lon: string }) => ({
-              id: `nom-${item.place_id}`,
-              name: item.display_name.split(',')[0],
-              description: item.display_name.split(',').slice(1, 3).join(',').trim() || item.type,
-              lat: parseFloat(item.lat),
-              lng: parseFloat(item.lon),
-              source: 'nominatim' as const,
-            })
-          );
-
-          // Merge: local + biblical first, then nominatim (deduped by coordinate proximity)
-          const merged = [...immediateResults];
-          for (const nr of nominatimResults) {
-            const isDuplicate = merged.some(
-              lr => Math.abs(lr.lat - nr.lat) < 0.05 && Math.abs(lr.lng - nr.lng) < 0.05
-            );
-            if (!isDuplicate) merged.push(nr);
-          }
-
-          setResults(merged);
-          setIsOpen(true);
-        }
-      } catch {
-        // Nominatim failed — still show local + biblical results
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [places]
-  );
-
-  const handleChange = (value: string) => {
-    setQuery(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(value), 300);
-  };
-
-  const handleSelect = (result: SearchResult) => {
-    onFlyTo(result.lat, result.lng, result.source === 'local' ? 14 : 11, {
-      name: result.name,
-      description: result.description,
-      source: result.source,
-    });
+  const selectResult = useCallback((result: MapSearchResult) => {
+    if (result.source === 'territory') {
+      onSelectTerritory(result.territory);
+      setQuery(result.name);
+      setIsOpen(false);
+      inputRef.current?.blur();
+      return;
+    }
+    onFlyTo(result.lat, result.lng, result.source === 'local' ? 14 : 11, { name: result.name, description: result.description, source: result.source, aliases: result.aliases });
     setQuery(result.name);
     setIsOpen(false);
-    setActiveIndex(-1);
     inputRef.current?.blur();
-  };
+  }, [onFlyTo, onSelectTerritory]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') return setIsOpen(false);
     if (!isOpen || results.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIndex(prev => (prev < results.length - 1 ? prev + 1 : 0));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIndex(prev => (prev > 0 ? prev - 1 : results.length - 1));
-    } else if (e.key === 'Enter' && activeIndex >= 0) {
-      e.preventDefault();
-      handleSelect(results[activeIndex]);
-    } else if (e.key === 'Escape') {
-      setIsOpen(false);
-      setActiveIndex(-1);
-    }
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex(index => (index + 1) % results.length); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex(index => (index <= 0 ? results.length - 1 : index - 1)); }
+    if (event.key === 'Enter' && activeIndex >= 0) { event.preventDefault(); selectResult(results[activeIndex]); }
   };
-
-  // Scroll active result into view
-  useEffect(() => {
-    if (activeIndex >= 0 && dropdownRef.current) {
-      const items = dropdownRef.current.querySelectorAll('[data-search-item]');
-      items[activeIndex]?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [activeIndex]);
 
   return (
-    <div className="absolute top-4 right-4 z-[500] w-80">
-      {/* Search Input */}
-      <div
-        className={`relative transition-all duration-200 ${
-          isFocused
-            ? 'ring-2 ring-indigo-400/60 shadow-lg shadow-indigo-500/10'
-            : 'shadow-md'
-        } rounded-xl`}
-      >
-        <div className="relative">
-          {/* Search Icon */}
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-            <svg
-              className={`w-4 h-4 transition-colors ${isFocused ? 'text-indigo-500' : 'text-gray-400'}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-
-          <input
-            ref={inputRef}
-            id="map-search-input"
-            type="text"
-            placeholder="Search places…"
-            value={query}
-            onChange={e => handleChange(e.target.value)}
-            onFocus={() => {
-              setIsFocused(true);
-              if (results.length > 0) setIsOpen(true);
-            }}
-            onBlur={() => setIsFocused(false)}
-            onKeyDown={handleKeyDown}
-            className="w-full bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl pl-10 pr-10 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 border border-gray-200/80 dark:border-gray-600/80 rounded-xl focus:outline-none"
-            autoComplete="off"
-          />
-
-          {/* Clear / Loading indicator */}
-          <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-            {isLoading ? (
-              <div className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
-            ) : query ? (
-              <button
-                onClick={() => {
-                  setQuery('');
-                  setResults([]);
-                  setIsOpen(false);
-                  inputRef.current?.focus();
-                }}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            ) : null}
-          </div>
+    <div ref={panelRef} className="relative z-[500] w-full">
+      <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white/95 shadow-xl shadow-stone-900/10 backdrop-blur-xl dark:border-stone-700 dark:bg-gray-900/95">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <svg className="h-5 w-5 shrink-0 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35m1.35-5.65a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" /></svg>
+          <input ref={inputRef} type="search" value={query} onChange={event => { setQuery(event.target.value); setIsOpen(true); }} onFocus={() => setIsOpen(true)} onKeyDown={onKeyDown} placeholder="Find a place, people, or kingdom…" className="min-w-0 flex-1 bg-transparent text-sm text-stone-900 outline-none placeholder:text-stone-400 dark:text-white" autoComplete="off" aria-label="Search biblical places, peoples, and kingdoms" />
+          {query && <button onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200" aria-label="Clear search"><svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 6 12 12M18 6 6 18" /></svg></button>}
         </div>
+        <div className="border-t border-stone-100 px-4 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400 dark:border-stone-800">{selectedBook ? `${selectedBook} + your saved places` : 'Biblical catalog + your saved places'}</div>
       </div>
 
-      {/* Dropdown Results */}
-      {isOpen && results.length > 0 && (
-        <div
-          ref={dropdownRef}
-          className="mt-2 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200/80 dark:border-gray-600/80 rounded-xl shadow-xl shadow-black/10 max-h-72 overflow-y-auto"
-        >
-          {/* Local results header */}
-          {results.some(r => r.source === 'local') && (
-            <div className="px-3 pt-2.5 pb-1">
-              <p className="text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider">
-                📌 Your Places
-              </p>
-            </div>
-          )}
-
-          {results
-            .filter(r => r.source === 'local')
-            .map((result) => {
-              const globalIndex = results.indexOf(result);
-              return (
-                <button
-                  key={result.id}
-                  data-search-item
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    handleSelect(result);
-                  }}
-                  onMouseEnter={() => setActiveIndex(globalIndex)}
-                  className={`w-full text-left px-3 py-2 flex items-start gap-2.5 transition-colors ${
-                    activeIndex === globalIndex
-                      ? 'bg-indigo-50 dark:bg-indigo-900/30'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                >
-                  {/* Pin icon */}
-                  <div className="mt-0.5 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
-                      <svg className="w-3 h-3 text-indigo-600 dark:text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {result.name}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.description}</p>
-                  </div>
-                </button>
-              );
-            })}
-
-          {/* Biblical places header */}
-          {results.some(r => r.source === 'biblical') && (
-            <div className="px-3 pt-2.5 pb-1 border-t border-gray-100 dark:border-gray-700/50">
-              <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                ✝️ Biblical Places
-              </p>
-            </div>
-          )}
-
-          {results
-            .filter(r => r.source === 'biblical')
-            .map((result) => {
-              const globalIndex = results.indexOf(result);
-              return (
-                <button
-                  key={result.id}
-                  data-search-item
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    handleSelect(result);
-                  }}
-                  onMouseEnter={() => setActiveIndex(globalIndex)}
-                  className={`w-full text-left px-3 py-2 flex items-start gap-2.5 transition-colors ${
-                    activeIndex === globalIndex
-                      ? 'bg-amber-50 dark:bg-amber-900/20'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                >
-                  <div className="mt-0.5 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
-                      <svg className="w-3 h-3 text-amber-700 dark:text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {result.name}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.description}</p>
-                  </div>
-                </button>
-              );
-            })}
-
-          {/* Nominatim results header */}
-          {results.some(r => r.source === 'nominatim') && (
-            <div className="px-3 pt-2.5 pb-1 border-t border-gray-100 dark:border-gray-700/50">
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                🌍 Other Places
-              </p>
-            </div>
-          )}
-
-          {results
-            .filter(r => r.source === 'nominatim')
-            .map((result) => {
-              const globalIndex = results.indexOf(result);
-              return (
-                <button
-                  key={result.id}
-                  data-search-item
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    handleSelect(result);
-                  }}
-                  onMouseEnter={() => setActiveIndex(globalIndex)}
-                  className={`w-full text-left px-3 py-2 flex items-start gap-2.5 transition-colors ${
-                    activeIndex === globalIndex
-                      ? 'bg-gray-50 dark:bg-gray-700/50'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
-                  }`}
-                >
-                  <div className="mt-0.5 flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                      <svg className="w-3 h-3 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {result.name}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.description}</p>
-                  </div>
-                </button>
-              );
-            })}
-        </div>
-      )}
-
-      {/* No results */}
-      {isOpen && results.length === 0 && query.trim() && !isLoading && (
-        <div className="mt-2 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-gray-200/80 dark:border-gray-600/80 rounded-xl shadow-xl shadow-black/10 px-4 py-5 text-center">
-          <svg className="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-sm text-gray-500 dark:text-gray-400">No places found for "{query}"</p>
-        </div>
-      )}
+      {isOpen && query.trim() && <div className="mt-2 max-h-[min(28rem,calc(100vh-8rem))] overflow-y-auto rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-2xl shadow-stone-900/15 backdrop-blur-xl dark:border-stone-700 dark:bg-gray-900/95">
+        {results.length === 0 ? <div className="px-4 py-5 text-center"><p className="text-sm font-medium text-stone-700 dark:text-stone-200">No biblical result matches that search.</p><p className="mt-1 text-xs text-stone-500">This search intentionally does not fall back to modern street addresses.</p></div> : results.map((result, index) => {
+          const biblical = result.source === 'biblical';
+          const territory = result.source === 'territory';
+          const territoryStart = territory && results[index - 1]?.source !== 'territory';
+          const activeClass = territory ? 'bg-[#dfecef] dark:bg-[#2e6f7e]/25' : biblical ? 'bg-amber-100/80 dark:bg-amber-950/50' : 'bg-indigo-100/70 dark:bg-indigo-950/50';
+          const iconClass = territory ? 'bg-[#dfecef] text-[#2e6f7e] dark:bg-[#2e6f7e]/25 dark:text-[#9cc9d3]' : biblical ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300';
+          return <div key={result.id}>{territoryStart && <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">Historical peoples &amp; kingdoms</p>}<button onMouseDown={event => { event.preventDefault(); selectResult(result); }} onMouseEnter={() => setActiveIndex(index)} className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${activeIndex === index ? activeClass : 'hover:bg-stone-100 dark:hover:bg-stone-800'}`}>
+          <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${iconClass}`}>{territory ? (result.isMapped ? '◌' : 'i') : biblical ? '✦' : '●'}</span>
+            <span className="min-w-0"><span className="block truncate text-sm font-semibold text-stone-900 dark:text-white">{result.name}</span><span className="mt-0.5 block truncate text-xs text-stone-500 dark:text-stone-400">{result.description}</span>{biblical && result.aliases && result.aliases.length > 2 && <span className="mt-1 block text-[10px] font-medium text-amber-700 dark:text-amber-400">+{result.aliases.length - 2} alternate biblical names</span>}{territory && !result.isMapped && <span className="mt-1 block text-[10px] font-medium text-slate-500 dark:text-slate-400">Evidence note — no border will be drawn</span>}{territory && result.isMapped && 'sites' in result.territory && <span className="mt-1 block text-[10px] font-medium text-[#2e6f7e] dark:text-[#9cc9d3]">Site lens — no border is implied</span>}</span>
+          </button></div>;
+        })}
+      </div>}
     </div>
   );
 }

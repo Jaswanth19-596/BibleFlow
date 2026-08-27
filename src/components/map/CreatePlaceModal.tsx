@@ -1,23 +1,25 @@
 import { useState, useEffect } from 'react';
+import { Entity } from '@/lib/types';
 
 interface CreatePlaceModalProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (name: string, description: string) => Promise<void>;
   coord: { lat: number; lng: number } | null;
+  place?: Entity | null;
 }
 
-export default function CreatePlaceModal({ open, onClose, onSubmit, coord }: CreatePlaceModalProps) {
+export default function CreatePlaceModal({ open, onClose, onSubmit, coord, place = null }: CreatePlaceModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setName('');
-      setDescription('');
+      setName(place?.name ?? '');
+      setDescription(place?.description ?? '');
     }
-  }, [open]);
+  }, [open, place]);
 
   if (!open || !coord) return null;
 
@@ -40,7 +42,7 @@ export default function CreatePlaceModal({ open, onClose, onSubmit, coord }: Cre
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Add Place</h2>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">{place ? 'Edit saved place' : 'Add saved place'}</h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
           Coordinates: {coord.lat.toFixed(4)}, {coord.lng.toFixed(4)}
         </p>
@@ -81,7 +83,7 @@ export default function CreatePlaceModal({ open, onClose, onSubmit, coord }: Cre
             disabled={!name.trim() || saving}
             className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {saving ? 'Saving...' : 'Add Place'}
+            {saving ? 'Saving...' : place ? 'Save changes' : 'Save place'}
           </button>
         </div>
       </form>

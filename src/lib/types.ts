@@ -105,8 +105,6 @@ export interface EntityRelationship {
   created_at: string;
 }
 
-// ─── Timeline periods ───────────────────────────────────────────────────────
-
 export interface TimelinePeriod {
   id: string;
   name: string;
@@ -114,5 +112,30 @@ export interface TimelinePeriod {
   sort_order: number;
   band_height: number;
   created_at: string;
+}
+
+// ─── Map Paths ─────────────────────────────────────────────────────────────
+
+export type PathLineStyle = 'solid' | 'dashed' | 'dotted';
+
+export interface MapPathPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  place_id?: string;
+  kind?: 'biblical' | 'saved' | 'custom';
+}
+
+export interface MapPath {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  style: PathLineStyle;
+  points: MapPathPoint[];
+  total_distance_km?: number;
+  created_at: string;
+  updated_at: string;
 }
 

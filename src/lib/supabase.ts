@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Topic, Verse, Connection, TopicLink, VerseWithTopic, Entity, EntityMention, EntityMentionWithEntity, EntityMentionWithVerse, EntityRelationship, EntityType, TimelinePeriod } from './types';
+import { Topic, Verse, Connection, TopicLink, VerseWithTopic, Entity, EntityMention, EntityMentionWithEntity, EntityMentionWithVerse, EntityRelationship, EntityType, TimelinePeriod, MapPath } from './types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -194,7 +194,7 @@ export async function searchVerses(query: string): Promise<VerseWithTopic[]> {
       *,
       topic:topics(id, name, color)
     `)
-    .or(`book.ilike.%${query}%,note.ilike.%${query}%`)
+    .or(`book.ilike.%${query}%,note.ilike.%${query}%,text.ilike.%${query}%`)
     .order('updated_at', { ascending: false })
     .limit(50);
   if (error) throw error;
@@ -240,7 +240,7 @@ export function subscribeToTopicVerses(topicId: string, callback: () => void) {
   return channel;
 }
 
-export function subscribeToTopicConnections(callback: () => void) {
+export function subscribeToTopicConnections(callback: (payload: any) => void) {
   const channel = supabase.channel(`connections-${Math.random().toString(36).substring(7)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, callback)
     .subscribe();
@@ -547,3 +547,48 @@ export function subscribeToEntityRelationships(callback: () => void) {
     .subscribe();
   return channel;
 }
+
+// ─── Map Paths ─────────────────────────────────────────────────────────────
+
+export async function getMapPaths(): Promise<MapPath[]> {
+  const { data, error } = await supabase
+    .from('map_paths')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createMapPath(path: Omit<MapPath, 'id' | 'created_at' | 'updated_at'>): Promise<MapPath> {
+  const { data, error } = await supabase
+    .from('map_paths')
+    .insert(path)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateMapPath(id: string, updates: Partial<Omit<MapPath, 'id' | 'created_at'>>): Promise<MapPath> {
+  const { data, error } = await supabase
+    .from('map_paths')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteMapPath(id: string): Promise<void> {
+  const { error } = await supabase.from('map_paths').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export function subscribeToMapPaths(callback: () => void) {
+  const channel = supabase.channel(`map_paths-${Math.random().toString(36).substring(7)}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'map_paths' }, callback)
+    .subscribe();
+  return channel;
+}
+

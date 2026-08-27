@@ -261,5 +261,28 @@ html, body, #root {
   animation: atlasExpand 0.2s ease-out;
 }
 
+/* Historical site lenses use a restrained field-label treatment so they read
+   as evidence on the map, not as an extra set of application controls. */
+.historical-site-label {
+  border: 1px solid rgba(46, 111, 126, 0.22);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(31, 56, 67, 0.12);
+  color: #245a66;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 3px 5px;
+}
+
+.historical-site-label::before {
+  display: none;
+}
+
+.dark .historical-site-label {
+  border-color: rgba(156, 201, 211, 0.28);
+  background: rgba(19, 38, 44, 0.92);
+  color: #b8e0e7;
+}
 
 

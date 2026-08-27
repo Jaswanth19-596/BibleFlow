@@ -46,6 +46,17 @@ export async function fetchKjvVerseRange(
   });
 }
 
+/** Fetch an entire locally-cached KJV book as `[chapter:verse] text` lines. */
+export async function fetchKjvBook(book: string): Promise<string | null> {
+  const w = initWorker();
+  const jobId = currentJobId++;
+
+  return new Promise((resolve, reject) => {
+    pendingJobs.set(jobId, { resolve, reject });
+    w.postMessage({ jobId, type: 'fetchKjvBook', payload: { book } });
+  });
+}
+
 export interface VerseSelection {
   chapter: number;
   verseStart: number;

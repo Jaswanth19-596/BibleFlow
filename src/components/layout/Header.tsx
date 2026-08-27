@@ -5,6 +5,9 @@ export default function Header() {
   const location = useLocation();
   const { isOffline, canInstall, install } = usePWA();
 
+  // Hide the global nav on the map page — the map sidebar has its own back link
+  if (location.pathname === '/map') return null;
+
   const navItems = [
     { path: '/', label: 'Topics', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
     { path: '/topics/network', label: 'Network', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Connection, ConnectionType } from '@/lib/types';
+import { Connection, ConnectionType, Verse } from '@/lib/types';
 import {
   getConnectionsByTopic,
   createConnection,
@@ -60,8 +60,20 @@ export function useConnections(topicId: string | undefined) {
   useEffect(() => {
     if (!topicId) return;
 
-    const channel = subscribeToTopicConnections(() => {
-      queryClient.invalidateQueries({ queryKey: ['connections', topicId] });
+    const channel = subscribeToTopicConnections((payload) => {
+      // Client-side optimize: check if this connection belongs to any verses in our current topic's cache
+      const cachedVerses = queryClient.getQueryData<Verse[]>(['verses', topicId]) || [];
+      const verseIds = new Set(cachedVerses.map((v) => v.id));
+
+      const newRecord = payload.new as Connection | undefined;
+      const oldRecord = payload.old as Connection | undefined;
+
+      const fromId = newRecord?.from_verse_id || oldRecord?.from_verse_id;
+      const toId = newRecord?.to_verse_id || oldRecord?.to_verse_id;
+
+      if ((fromId && verseIds.has(fromId)) || (toId && verseIds.has(toId))) {
+        queryClient.invalidateQueries({ queryKey: ['connections', topicId] });
+      }
     });
 
     return () => {

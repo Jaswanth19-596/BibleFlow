@@ -34,6 +34,19 @@ Create meaningful relationships between verses with typed connections:
 - **Interactive Navigation**: Click any topic node to navigate to its detail view
 - **Link Creation UI**: Drag between topic nodes to create new relationships
 
+### Biblical Map
+- **Focused study dock**: A collapsible left-side dock keeps Explore, Passage, Journey, and Library controls available without covering the map with modals
+- **Bible-first discovery**: Browse 653 distinct biblical locations from regional entry points, including Bible lands, Egypt & Sinai, Mesopotamia, the early church world, and the Mediterranean
+- **Aliases without pin clutter**: Alternate biblical names at the same site appear together in one marker, popup, and search result
+- **Book-aware geography**: Select the book you are reading to show cataloged locations plus literal place names found in the local KJV text, with period-appropriate names where available
+- **Passage → map**: Choose a chapter or verse range to load the local KJV text, highlight the places in that passage, fit the map to them, and see the exact verse references beside each result
+- **Distance and travel insight**: Select any two biblical or saved places to compare straight-line distance, an honest ancient walking-day range, terrain context, and direct/overland/historical-corridor study options
+- **Gentle geographic context**: Approximate historical study areas provide context without covering or intercepting the map; biblical locations remain small, clickable pins
+- **Reliable place search**: Search canonical names, alternate biblical names, or cited references; map search never falls back to modern street addresses
+- **Historical peoples and kingdoms**: Search source-backed groups such as Canaanites, Philistines, Moabites, Assyrians, or the Hittite kingdom to see qualified historical areas, biblical references, and data attribution. Hivites and Amorites use named site lenses where that is the more honest evidence; Perizzites and Girgashites remain clear research notes instead of invented borders
+- **Personal study routes**: Save study locations, link them to people, and follow their ordered travel route
+- **Saved-place management**: Add a place only when you enter placement mode, then focus, edit, or remove any saved place from the map sidebar
+
 ### Bible Integration
 - **King James Version**: Auto-fetches KJV text using bible-api.com (free, no key required)
 - **Complete Bible Index**: Full 66-book canon with accurate chapter and verse counts

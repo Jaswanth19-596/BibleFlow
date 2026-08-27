@@ -69,6 +69,20 @@ self.addEventListener('message', async (event: MessageEvent) => {
         self.postMessage({ jobId, result: null });
       }
 
+    } else if (type === 'fetchKjvBook') {
+      const { book } = payload as { book: string };
+      const data = await getKjvData();
+      if (!data || !data.verses) {
+        self.postMessage({ jobId, result: null });
+        return;
+      }
+
+      const bookLower = book.toLowerCase();
+      const text = data.verses
+        .filter(verse => verse.book_name.toLowerCase() === bookLower)
+        .map(verse => `[${verse.chapter}:${verse.verse}] ${verse.text.replace(/^[¶\s]+/, '').replace(/[‹›]/g, '').trim()}`)
+        .join('\n');
+      self.postMessage({ jobId, result: text || null });
     } else if (type === 'fetchKjvCustomVerses') {
       // payload.selections: Array<{ chapter: number; verseStart: number; verseEnd: number }>
       const { book, selections } = payload as {
@@ -105,4 +119,3 @@ self.addEventListener('message', async (event: MessageEvent) => {
     self.postMessage({ jobId, error: err instanceof Error ? err.message : 'Unknown error in worker' });
   }
 });
-
