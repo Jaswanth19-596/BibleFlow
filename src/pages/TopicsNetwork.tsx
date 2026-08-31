@@ -295,7 +295,7 @@ export default function TopicsNetwork() {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls />
         <MiniMap nodeStrokeWidth={3} zoomable pannable />
-        <div className="absolute top-4 left-4 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md z-10">
+        <div className="absolute top-3 left-3 right-3 max-w-sm bg-white/95 dark:bg-gray-800/95 p-3 sm:top-4 sm:left-4 sm:right-auto sm:p-4 rounded-lg shadow-md backdrop-blur z-10">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Topic Network</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
             {topics.length} topics, {links.length} connections
@@ -303,7 +303,7 @@ export default function TopicsNetwork() {
           {topics.length === 0 ? (
             <p className="text-xs text-amber-500">Create topics in the Dashboard first</p>
           ) : (
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">
               Click a topic to view. Drag from handles to link topics. Click a link to edit.
             </p>
           )}

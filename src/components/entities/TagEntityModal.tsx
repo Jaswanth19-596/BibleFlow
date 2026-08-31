@@ -112,7 +112,7 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
               <button
                 key={entity.id}
                 onClick={() => handleTag(entity)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
+                className="w-full min-h-11 flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
               >
                 <span className="text-base">{ENTITY_TYPE_ICONS[entity.type]}</span>
                 <span className="font-medium text-gray-900 dark:text-white flex-1">{entity.name}</span>

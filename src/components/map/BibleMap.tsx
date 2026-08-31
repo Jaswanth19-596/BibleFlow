@@ -664,9 +664,9 @@ export default function BibleMap() {
     });
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/">CARTO</a>',
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
     }).addTo(map);
 
@@ -1387,8 +1387,8 @@ export default function BibleMap() {
 
       {/* Floating active-study badge */}
       {(passageStudy || travelInsight || focusedPath) && (
-        <div className="absolute bottom-6 left-1/2 z-[460] -translate-x-1/2">
-          <div className="flex items-center gap-3 rounded-full border border-white/50 bg-white/90 px-4 py-2 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/90">
+        <div className="absolute bottom-16 left-1/2 z-[1190] w-[calc(100%-2rem)] -translate-x-1/2 sm:bottom-6 sm:z-[1210] sm:w-auto">
+          <div className="flex max-w-full items-center gap-3 overflow-x-auto rounded-full border border-white/50 bg-white/90 px-4 py-2 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/90">
             {passageStudy && (
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-slate-700 dark:bg-slate-300" />

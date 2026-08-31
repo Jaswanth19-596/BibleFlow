@@ -64,15 +64,15 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Search Verses</h1>
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-5 sm:mb-6">Search Verses</h1>
 
       <div className="mb-8">
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by book name, verse reference, or note content..."
-          className="text-lg"
+          className="text-base sm:text-lg"
           autoFocus
         />
       </div>
@@ -126,8 +126,8 @@ export default function SearchPage() {
                     onClick={() => handleResultClick(verse)}
                     className="w-full text-left bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors"
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <span className="font-semibold text-gray-900 dark:text-white">
                           {formatVerseRef(verse.book, verse.chapter, verse.verse_start, verse.verse_end)}
                         </span>
@@ -139,7 +139,7 @@ export default function SearchPage() {
                         </span>
                       </div>
                       <svg
-                        className="w-5 h-5 text-gray-400"
+                        className="w-5 h-5 shrink-0 text-gray-400"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"

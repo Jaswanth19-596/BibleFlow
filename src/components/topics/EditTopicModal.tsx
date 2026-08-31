@@ -95,7 +95,7 @@ export default function EditTopicModal({ open, onClose, onSubmit, topic }: EditT
                   setColor(c);
                   setCustomColor('');
                 }}
-                className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                className={`w-10 h-10 rounded-full border-2 transition-transform ${
                   color === c && !customColor ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'
                 }`}
                 style={{ backgroundColor: c }}
@@ -118,11 +118,11 @@ export default function EditTopicModal({ open, onClose, onSubmit, topic }: EditT
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="secondary" onClick={handleClose}>
+        <div className="grid grid-cols-2 gap-3 pt-2 sm:flex sm:justify-end">
+          <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={handleClose}>
             Cancel
           </Button>
-          <Button type="submit">Save Changes</Button>
+          <Button className="w-full sm:w-auto" type="submit">Save Changes</Button>
         </div>
       </form>
     </Modal>

@@ -350,7 +350,7 @@ export default function PeopleAtlas() {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800 z-10">
+      <div className="px-3 py-2.5 sm:px-4 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-white dark:bg-gray-800 z-10">
         <div>
           <h1 className="text-lg font-bold text-gray-900 dark:text-white">
             People Atlas
@@ -358,22 +358,22 @@ export default function PeopleAtlas() {
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {people.length} people · {relationships.length} relationships · {periods.length} periods
             {people.length > 0 && (
-              <span className="ml-2 text-gray-400 dark:text-gray-500">
+              <span className="hidden sm:inline ml-2 text-gray-400 dark:text-gray-500">
                 — drag between people to connect them
               </span>
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <button
             onClick={() => { setEditingPerson(null); setShowPersonModal(true); }}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="min-h-11 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             + Person
           </button>
           <button
             onClick={() => { setEditingPeriod(null); setShowPeriodModal(true); }}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="min-h-11 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             + Period
           </button>
@@ -438,7 +438,7 @@ export default function PeopleAtlas() {
 
         {/* Period list sidebar — click to edit */}
         {periods.length > 0 && (
-          <div className="absolute right-4 top-4 z-10 space-y-1 max-w-[160px]">
+          <div className="absolute right-3 top-3 z-10 space-y-1 max-w-[132px] sm:right-4 sm:top-4 sm:max-w-[160px]">
             {[...periods]
               .sort((a, b) => a.sort_order - b.sort_order)
               .map((period) => (
@@ -465,8 +465,8 @@ export default function PeopleAtlas() {
 
         {/* Inline relationship type prompt — appears when you draw a connection */}
         {pendingConnection && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/20">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-5 w-full max-w-sm animate-atlas-expand">
+          <div className="absolute inset-0 z-40 flex items-end justify-center bg-black/20 sm:items-center">
+            <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] w-full max-w-sm animate-atlas-expand">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 <span className="font-semibold text-gray-900 dark:text-white">{sourceName}</span>
                 {' → '}

@@ -72,7 +72,7 @@ export default function ConnectionPopover({
   };
 
   return (
-    <div className="absolute z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-72">
+    <div className="relative z-50 w-[calc(100vw-2rem)] max-w-sm bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 sm:w-72">
       {!showDeleteConfirm ? (
         <>
           <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
@@ -125,7 +125,7 @@ export default function ConnectionPopover({
                   </div>
                   <button
                     onClick={handleRemoveAnchor}
-                    className="text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
+                    className="min-h-11 px-2 text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
                     title="Remove anchor"
                   >
                     ✕ Remove
@@ -142,7 +142,7 @@ export default function ConnectionPopover({
                       <button
                         key={c}
                         onClick={() => setAnchorColor(c)}
-                        className={`w-5 h-5 rounded-full transition-transform hover:scale-110 ${
+                        className={`w-9 h-9 rounded-full transition-transform hover:scale-110 ${
                           anchorColor === c
                             ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500 scale-110'
                             : ''

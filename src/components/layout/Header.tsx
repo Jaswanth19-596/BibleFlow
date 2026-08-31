@@ -17,13 +17,13 @@ export default function Header() {
   ];
 
   return (
-    <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-      <div className="flex items-center justify-between">
+    <header className="shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-3 py-2 sm:px-4 sm:py-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <svg className="w-8 h-8 text-indigo-600" viewBox="0 0 24 24" fill="currentColor">
+          <svg className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-600" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">Bible Flow</span>
+          <span className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">Bible Flow</span>
           {isOffline && (
             <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -34,28 +34,29 @@ export default function Header() {
           )}
         </Link>
 
-        <nav className="flex items-center gap-1">
+        <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto pb-0.5 -mx-1 px-1 max-sm:justify-between max-sm:overflow-visible sm:gap-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Primary navigation">
           {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex min-h-11 shrink-0 items-center gap-1 px-1.5 py-2 rounded-lg text-xs max-sm:min-w-0 max-sm:flex-1 max-sm:flex-col max-sm:gap-0 max-sm:px-0.5 max-sm:py-1 sm:gap-2 sm:px-4 sm:text-sm font-medium transition-colors ${
                 location.pathname === item.path
                   ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200'
                   : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'
               }`}
+              aria-current={location.pathname === item.path ? 'page' : undefined}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
               </svg>
-              {item.label}
+              <span className="max-sm:text-[10px] max-sm:leading-none">{item.label}</span>
             </Link>
           ))}
 
           {canInstall && (
             <button
               onClick={install}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30 transition-colors"
+            className="hidden min-h-11 shrink-0 items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:flex sm:gap-2 sm:px-4 sm:text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30 transition-colors"
               title="Install Bible Flow"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

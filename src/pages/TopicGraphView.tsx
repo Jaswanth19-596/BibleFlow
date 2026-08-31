@@ -312,22 +312,23 @@ export default function TopicGraphView() {
   return (
     <>
       {/* Toolbar */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <Button variant="ghost" onClick={() => navigate('/topics/network')}>
+      <div className="absolute top-0 left-0 right-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-3 py-2 sm:px-4 sm:py-3">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 lg:flex-1">
+            <Button className="self-start shrink-0 px-3" variant="ghost" onClick={() => navigate('/topics/network')}>
               <svg className="w-5 h-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Back to Network
+              <span className="hidden sm:inline">Back to Network</span>
+              <span className="sm:hidden">Network</span>
             </Button>
 
             {editingTopicName ? (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <Input
                   value={topicName}
                   onChange={(e) => setTopicName(e.target.value)}
-                  className="w-64"
+                  className="w-full sm:w-64"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleTopicNameSave();
@@ -344,7 +345,7 @@ export default function TopicGraphView() {
               </div>
             ) : (
               <h1
-                className="text-xl font-bold text-gray-900 dark:text-white cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 whitespace-nowrap"
+                className="max-w-full truncate text-xl font-bold text-gray-900 dark:text-white cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400"
                 onClick={() => setEditingTopicName(true)}
               >
                 {topic.name}
@@ -352,7 +353,7 @@ export default function TopicGraphView() {
             )}
 
             {/* In-Topic Search Bar */}
-            <div className="relative flex items-center flex-1 max-w-xs ml-2">
+            <div className="relative flex w-full items-center sm:flex-1 sm:max-w-xs sm:ml-1">
               <svg
                 className="absolute left-2.5 w-4 h-4 text-gray-400 pointer-events-none"
                 fill="none"
@@ -384,31 +385,34 @@ export default function TopicGraphView() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button variant="secondary" onClick={handleAddVerse}>
-              <svg className="w-5 h-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <div className="grid w-full grid-cols-3 gap-1.5 lg:flex lg:w-auto lg:items-center lg:gap-2 lg:flex-shrink-0">
+            <Button className="px-2 sm:px-4" variant="secondary" onClick={handleAddVerse}>
+              <svg className="w-5 h-5 sm:mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
-              Add Verse
+              <span className="hidden sm:inline">Add Verse</span>
+              <span className="sm:hidden sr-only">Add Verse</span>
             </Button>
-            <Button variant="secondary" onClick={() => setShowLinkModal(true)}>
-              <svg className="w-5 h-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <Button className="px-2 sm:px-4" variant="secondary" onClick={() => setShowLinkModal(true)}>
+              <svg className="w-5 h-5 sm:mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
               </svg>
-              Link Topic
+              <span className="hidden sm:inline">Link Topic</span>
+              <span className="sm:hidden sr-only">Link Topic</span>
             </Button>
-            <Button variant="ghost" onClick={handleExportPNG}>
-              <svg className="w-5 h-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <Button className="px-2 sm:px-4" variant="ghost" onClick={handleExportPNG}>
+              <svg className="w-5 h-5 sm:mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              Export
+              <span className="hidden sm:inline">Export</span>
+              <span className="sm:hidden sr-only">Export</span>
             </Button>
           </div>
         </div>
       </div>
 
       {/* Graph Canvas */}
-      <div className="absolute inset-0 pt-16">
+      <div className="absolute inset-0 pt-[9.75rem] sm:pt-[7rem] lg:pt-16">
         <VerseFlowCanvas
           verses={verses}
           connections={connections}

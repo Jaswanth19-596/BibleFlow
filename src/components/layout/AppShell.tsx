@@ -18,10 +18,10 @@ export default function AppShell({
   const handleCloseSidebar = onCloseSidebar || (() => {});
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="h-full min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
       <Header />
-      <div className="flex-1 flex overflow-hidden">
-        <main className="flex-1 overflow-auto">{children}</main>
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        <main className="flex-1 min-h-0 overflow-auto">{children}</main>
         {showSidebar && sidebarContent && (
           <>
             <div

@@ -108,15 +108,15 @@ export default function Dashboard() {
   const isLoading = loading || countsLoading;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Topics</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Organize your Bible verses by theological concept
           </p>
         </div>
-        <Button onClick={() => setShowNewModal(true)}>
+        <Button className="w-full sm:w-auto" onClick={() => setShowNewModal(true)}>
           <svg className="w-5 h-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>

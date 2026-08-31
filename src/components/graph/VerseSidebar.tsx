@@ -321,7 +321,7 @@ export default function VerseSidebar({ verse, onSave, onDelete, onClose }: Verse
       />
 
       {mode === 'standard' ? (
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             label="Chapter"
             type="number"
@@ -442,17 +442,17 @@ export default function VerseSidebar({ verse, onSave, onDelete, onClose }: Verse
         />
       </div>
 
-      <div className="flex justify-between pt-2">
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-between">
         {verse && onDelete && (
           <Button type="button" variant="danger" onClick={onDelete}>
             Delete
           </Button>
         )}
-        <div className="flex gap-2 ml-auto">
-          <Button type="button" variant="secondary" onClick={onClose}>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2 sm:ml-auto">
+          <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit">
+          <Button className="w-full sm:w-auto" type="submit">
             {verse ? 'Save Changes' : 'Add Verse'}
           </Button>
         </div>

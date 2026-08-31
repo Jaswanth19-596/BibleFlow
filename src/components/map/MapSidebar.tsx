@@ -34,7 +34,7 @@ const SECTIONS: { id: SidebarSection; label: string; iconPath: string }[] = [
 ];
 
 export default function MapSidebar(props: MapSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 640);
   const [openSection, setOpenSection] = useState<SidebarSection | null>(null);
   const routeStops = props.routeStops ?? [];
   const selectedPerson = props.people.find(person => person.id === props.selectedPersonId);
@@ -46,16 +46,16 @@ export default function MapSidebar(props: MapSidebarProps) {
   // ── Collapsed icon rail ──────────────────────────────────────────────
   if (collapsed) {
     return (
-      <aside className="absolute left-0 top-0 bottom-0 z-[450] flex w-12 flex-col items-center gap-1 border-r border-slate-200/60 bg-white/90 py-3 shadow-lg shadow-black/5 backdrop-blur-xl dark:border-slate-800 dark:bg-[#111716]/95" aria-label="Map sidebar (collapsed)">
-        <button onClick={() => setCollapsed(false)} className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Expand sidebar" title="Expand sidebar">
+      <aside className="absolute bottom-3 left-3 right-3 z-[1200] flex h-12 items-center justify-between gap-1 rounded-xl border border-slate-200/60 bg-white/90 px-1.5 shadow-lg shadow-black/5 backdrop-blur-xl dark:border-slate-800 dark:bg-[#111716]/95 sm:inset-y-0 sm:right-auto sm:h-auto sm:w-12 sm:flex-col sm:justify-start sm:rounded-none sm:border-y-0 sm:border-l-0 sm:px-0 sm:py-3" aria-label="Map sidebar (collapsed)">
+        <button onClick={() => setCollapsed(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white sm:mb-2" aria-label="Expand sidebar" title="Expand sidebar">
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
         </button>
 
-        <Link to="/" className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 transition hover:bg-indigo-50 dark:hover:bg-indigo-950/40" title="Back to Topics">
+        <Link to="/" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-indigo-600 transition hover:bg-indigo-50 dark:hover:bg-indigo-950/40 sm:mb-3 sm:h-8 sm:w-8" title="Back to Topics">
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </Link>
 
-        <div className="my-1 h-px w-6 bg-slate-200 dark:bg-slate-700" />
+        <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700 sm:my-1 sm:h-px sm:w-6" />
 
         {SECTIONS.map(section => (
           <button
@@ -78,7 +78,7 @@ export default function MapSidebar(props: MapSidebarProps) {
 
   // ── Expanded sidebar ─────────────────────────────────────────────────
   return (
-    <aside className="absolute left-0 top-0 bottom-0 z-[450] flex w-[360px] flex-col border-r border-slate-200/60 bg-white/95 shadow-xl shadow-black/8 backdrop-blur-xl dark:border-slate-800 dark:bg-[#111716]/97" aria-label="Map sidebar">
+    <aside className="absolute inset-x-0 bottom-0 z-[1200] flex h-[min(74dvh,620px)] w-full flex-col rounded-t-2xl border-t border-slate-200/60 bg-white/95 shadow-xl shadow-black/8 backdrop-blur-xl max-sm:[&_button]:min-h-11 dark:border-slate-800 dark:bg-[#111716]/97 sm:inset-y-0 sm:left-0 sm:right-auto sm:h-auto sm:w-[360px] sm:rounded-none sm:border-r sm:border-t-0" aria-label="Map sidebar">
       {/* ── Header ────────────────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         <Link to="/" className="group flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400">
