@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Entity } from '@/lib/types';
-import { BiblicalPlaceCluster } from '@/data/biblicalPlaces';
+import { BiblicalPlaceCluster, HISTORICAL_PLACE_KIND_LABELS } from '@/data/biblicalPlaces';
 import { HistoricalMapSelection } from '@/data/biblicalTerritories';
 import { hasMappedHistoricalEvidence, searchHistoricalTerritories } from '@/lib/territorySearch';
 
@@ -21,7 +21,7 @@ interface TerritoryResult {
 type MapSearchResult = SearchResult | TerritoryResult;
 
 export interface SearchContext {
-  name: string; description: string; source: 'local' | 'biblical'; aliases?: string[];
+  name: string; description: string; source: 'local' | 'biblical'; aliases?: string[]; placeId?: string;
 }
 
 interface MapSearchBarProps {
@@ -35,7 +35,7 @@ interface MapSearchBarProps {
 const biblicalDescription = (place: BiblicalPlaceCluster) => {
   const references = place.references.slice(0, 3).join(' · ');
   const aliases = place.aliases.slice(0, 2).join(', ');
-  return [references, aliases ? `Also known as ${aliases}` : ''].filter(Boolean).join(' — ');
+  return [HISTORICAL_PLACE_KIND_LABELS[place.kind], references, aliases ? `Also known as ${aliases}` : ''].filter(Boolean).join(' — ');
 };
 
 const score = (place: BiblicalPlaceCluster, query: string) => {
@@ -119,7 +119,7 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
       inputRef.current?.blur();
       return;
     }
-    onFlyTo(result.lat, result.lng, result.source === 'local' ? 14 : 11, { name: result.name, description: result.description, source: result.source, aliases: result.aliases });
+    onFlyTo(result.lat, result.lng, result.source === 'local' ? 14 : 11, { name: result.name, description: result.description, source: result.source, aliases: result.aliases, placeId: result.source === 'biblical' ? result.id : undefined });
     setQuery(result.name);
     setIsOpen(false);
     inputRef.current?.blur();

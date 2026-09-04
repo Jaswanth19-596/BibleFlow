@@ -8,6 +8,12 @@ import TravelInsightPanel from './TravelInsightPanel';
 import { TravelInsight, TravelPlace, TravelRouteOption } from '@/lib/travelInsights';
 import TerritoryEvidenceCard from './TerritoryEvidenceCard';
 import { HistoricalMapSelection } from '@/data/biblicalTerritories';
+import {
+  HISTORICAL_PLACE_KIND_LABELS,
+  HISTORICAL_PLACE_KINDS,
+  HistoricalPlaceCoverage,
+  HistoricalPlaceKind,
+} from '@/data/biblicalPlaces';
 
 type SidebarSection = 'explore' | 'places-in-book' | 'distance' | 'paths' | 'library';
 
@@ -19,7 +25,8 @@ interface MapSidebarProps {
   selectedPersonId: string | null; onSelectPerson: (id: string | null) => void; people: Entity[];
   savedPlaces: Entity[]; selectedSavedPlaceId: string | null; onFocusSavedPlace: (place: Entity) => void; onEditSavedPlace: (place: Entity) => void; onDeleteSavedPlace: (place: Entity) => void; onStartAddingPlace: () => void; isAddingPlace: boolean;
   savedPaths: MapPath[]; activePathIds: Set<string>; onTogglePathVisibility: (id: string) => void; onFocusPath: (path: MapPath) => void; onEditPath: (path: MapPath) => void; onDeletePath: (path: MapPath) => void; onStartDrawingPath: () => void; isDrawingPath: boolean; onOpenCreatePathModal: () => void;
-  biblicalPlaceCount: number; selectedBook: string | null; onSelectBook: (book: string | null) => void; showBiblicalPlaces: boolean; onToggleBiblicalPlaces: () => void;
+  biblicalPlaceCount: number; totalBiblicalPlaceCount: number; selectedBook: string | null; onSelectBook: (book: string | null) => void; showBiblicalPlaces: boolean; onToggleBiblicalPlaces: () => void;
+  placeKind: HistoricalPlaceKind | 'all'; onSelectPlaceKind: (kind: HistoricalPlaceKind | 'all') => void; placeCoverage: HistoricalPlaceCoverage; onSelectPlaceCoverage: (coverage: HistoricalPlaceCoverage) => void;
   passageStudy: PassageStudy | null; passageLoading: boolean; passageError: string | null; onMapPassage: (selection: PassageSelection) => void; onClearPassage: () => void; onFocusPassagePlace: (match: PassagePlaceMatch) => void;
   travelPlaces: TravelPlace[]; travelStart: TravelPlace | null; travelEnd: TravelPlace | null; travelInsight: TravelInsight | null; selectedTravelOptionId: TravelRouteOption['id']; onSelectTravelStart: (place: TravelPlace) => void; onSelectTravelEnd: (place: TravelPlace) => void; onClearTravelStart: () => void; onClearTravelEnd: () => void; onSelectTravelOption: (id: TravelRouteOption['id']) => void; onClearTravelInsight: () => void; onSaveTravelAsPath?: () => void;
   routeStops?: RouteStop[];
@@ -87,7 +94,7 @@ export default function MapSidebar(props: MapSidebarProps) {
           Bible Flow
         </Link>
         <div className="flex items-center gap-1">
-          <span className="mr-1 text-[10px] font-medium text-slate-400 dark:text-slate-500">{props.selectedBook ?? `${props.biblicalPlaceCount} places`}</span>
+          <span className="mr-1 text-[10px] font-medium text-slate-400 dark:text-slate-500">{props.selectedBook ?? `${props.biblicalPlaceCount}/${props.totalBiblicalPlaceCount} places`}</span>
           <button onClick={() => setCollapsed(true)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Collapse sidebar" title="Collapse sidebar">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M18 19l-7-7 7-7" /></svg>
           </button>
@@ -115,10 +122,32 @@ export default function MapSidebar(props: MapSidebarProps) {
               </select>
             </label>
 
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Coverage</span>
+                <select value={props.placeCoverage} onChange={event => props.onSelectPlaceCoverage(event.target.value as HistoricalPlaceCoverage)} className="block w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-amber-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Filter places by catalog importance">
+                  <option value="all">Every place</option>
+                  <option value="major-regional">Major + regional</option>
+                  <option value="major">Major only</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Place type</span>
+                <select value={props.placeKind} onChange={event => props.onSelectPlaceKind(event.target.value as HistoricalPlaceKind | 'all')} className="block w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-amber-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Filter places by historical place type">
+                  <option value="all">All types</option>
+                  {HISTORICAL_PLACE_KINDS.map(kind => <option key={kind} value={kind}>{HISTORICAL_PLACE_KIND_LABELS[kind]}</option>)}
+                </select>
+              </label>
+            </div>
+
             <button onClick={props.onToggleBiblicalPlaces} className="flex w-full items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600">
               <span className={`h-2.5 w-2.5 rounded-full transition ${props.showBiblicalPlaces ? 'bg-slate-900 dark:bg-slate-100' : 'bg-slate-300 dark:bg-slate-600'}`} />
-              <span className="text-slate-700 dark:text-slate-200">{props.showBiblicalPlaces ? 'Biblical places visible' : 'Biblical places hidden'}</span>
+              <span className="text-left text-slate-700 dark:text-slate-200">{props.showBiblicalPlaces ? `${props.biblicalPlaceCount} places represented` : 'Historical places hidden'}</span>
             </button>
+
+            <div className="border-l-2 border-amber-600/60 pl-3 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+              Nearby records consolidate into numbered clusters. Zoom in to separate them; exact shared sites remain grouped so no record is buried beneath another.
+            </div>
           </div>
         </AccordionSection>
 

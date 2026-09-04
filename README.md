@@ -36,8 +36,10 @@ Create meaningful relationships between verses with typed connections:
 
 ### Biblical Map
 - **Focused study dock**: A collapsible left-side dock keeps Explore, Passage, Journey, and Library controls available without covering the map with modals
-- **Bible-first discovery**: Browse 653 distinct biblical locations from regional entry points, including Bible lands, Egypt & Sinai, Mesopotamia, the early church world, and the Mediterranean
-- **Aliases without pin clutter**: Alternate biblical names at the same site appear together in one marker, popup, and search result
+- **Complete historical-place catalog**: Browse 1,335 mappable ancient-place records generated from the pinned OpenBible Bible Geocoding dataset (1,342 source records), with stable source ids, complete cataloged verse references, translation names, and place types
+- **No hidden catalog tiers**: Every record matching the active filters is represented at every zoom. Screen-space clustering keeps the map readable, and exact shared sites remain grouped into a selectable record list instead of burying overlapping pins
+- **Historical-place filters**: Narrow the map by Bible book, coverage (every, major/regional, or major only), and place type such as settlement, region, landform, water feature, structure, route, or campsite
+- **Evidence-aware place records**: Selecting a place opens a source-attributed record with aliases, Scripture references, coordinates, point precision, alternate geographic identifications, and OpenBible's time-weighted confidence score
 - **Book-aware geography**: Select the book you are reading to show cataloged locations plus literal place names found in the local KJV text, with period-appropriate names where available
 - **Passage → map**: Choose a chapter or verse range to load the local KJV text, highlight the places in that passage, fit the map to them, and see the exact verse references beside each result
 - **Distance and travel insight**: Select any two biblical or saved places to compare straight-line distance, an honest ancient walking-day range, terrain context, and direct/overland/historical-corridor study options
@@ -76,6 +78,7 @@ Create meaningful relationships between verses with typed connections:
 | **Styling** | Tailwind CSS 3.4 |
 | **Bible API** | bible-api.com (free KJV) |
 | **Export** | html-to-image |
+| **Historical Geography** | OpenBible.info Bible Geocoding Data (CC BY 4.0, pinned snapshot) |
 
 ## Getting Started
 
@@ -116,6 +119,16 @@ Create meaningful relationships between verses with typed connections:
    npm run dev
    ```
    Open [http://localhost:5173](http://localhost:5173)
+
+### Refreshing the Historical-Place Catalog
+
+The checked-in map snapshot is reproducible and does not require a network request in the browser. To regenerate it from the importer’s pinned OpenBible revision:
+
+```bash
+npm run data:openbible
+```
+
+The importer writes `src/data/generated/openBiblePlaces.json`. It keeps each ancient place as its own canonical record even when several records resolve to the same modern point; the map handles overlap through clustering rather than flattening distinct places into aliases.
 
 ## Project Structure
 

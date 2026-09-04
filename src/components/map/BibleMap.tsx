@@ -13,7 +13,15 @@ import CreatePathModal from './CreatePathModal';
 import PathDrawingToolbar from './PathDrawingToolbar';
 import MapSidebar from './MapSidebar';
 import MapSearchBar, { SearchContext } from './MapSearchBar';
-import { BIBLICAL_PLACE_CLUSTERS, BiblicalPlaceCluster } from '@/data/biblicalPlaces';
+import HistoricalPlaceDetails from './HistoricalPlaceDetails';
+import {
+  BIBLICAL_PLACE_CLUSTERS,
+  BIBLICAL_PLACE_COUNT,
+  BiblicalPlaceCluster,
+  HistoricalPlaceCoverage,
+  HistoricalPlaceIdentification,
+  HistoricalPlaceKind,
+} from '@/data/biblicalPlaces';
 import { BIBLICAL_AREAS } from '@/data/biblicalAreas';
 import { HistoricalMapSelection } from '@/data/biblicalTerritories';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -26,7 +34,6 @@ import {
   BookPlaceMatch,
   findPlacesInBook,
   findPlacesInPassage,
-  formatPassageVerseLabel,
 } from '@/lib/passagePlaces';
 import {
   TravelPlace,
@@ -34,6 +41,7 @@ import {
   buildTravelInsight,
   distanceInKm,
 } from '@/lib/travelInsights';
+import { clusterHistoricalPlaces } from '@/lib/mapClustering';
 
 // Create a proper default icon
 const DefaultIcon = L.icon({
@@ -93,6 +101,9 @@ export default function BibleMap() {
   const [placePendingDeletion, setPlacePendingDeletion] = useState<Entity | null>(null);
   const [selectedSavedPlaceId, setSelectedSavedPlaceId] = useState<string | null>(null);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
+  const [placeKind, setPlaceKind] = useState<HistoricalPlaceKind | 'all'>('all');
+  const [placeCoverage, setPlaceCoverage] = useState<HistoricalPlaceCoverage>('all');
+  const [selectedBiblicalPlace, setSelectedBiblicalPlace] = useState<BiblicalPlaceCluster | null>(null);
   const [bookPlaceMatches, setBookPlaceMatches] = useState<BookPlaceMatch[]>([]);
   const [passageStudy, setPassageStudy] = useState<PassageStudy | null>(null);
   const [passageLoading, setPassageLoading] = useState(false);
@@ -163,6 +174,12 @@ export default function BibleMap() {
 
     return Array.from(visible.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [bookPlaceMatches, selectedBook]);
+  const filteredBiblicalPlaces = useMemo(() => {
+    const maximumImportance = placeCoverage === 'major' ? 1 : placeCoverage === 'major-regional' ? 2 : 3;
+    return visibleBiblicalPlaces.filter(place =>
+      place.importance <= maximumImportance && (placeKind === 'all' || place.kind === placeKind)
+    );
+  }, [placeCoverage, placeKind, visibleBiblicalPlaces]);
 
   useEffect(() => {
     if (!selectedBook) {
@@ -328,6 +345,14 @@ export default function BibleMap() {
     const map = mapRef.current;
     if (!map) return;
 
+    if (context?.placeId) {
+      const place = BIBLICAL_PLACE_CLUSTERS.find(candidate => candidate.id === context.placeId);
+      if (place) {
+        setSelectedBiblicalPlace(place);
+        setShowBiblicalLayer(true);
+      }
+    }
+
     // Remove previous search pin
     if (searchPinRef.current) {
       searchPinRef.current.remove();
@@ -433,7 +458,12 @@ export default function BibleMap() {
   };
 
   const handleFocusPassagePlace = useCallback((match: PassagePlaceMatch) => {
+    setSelectedBiblicalPlace(match.place);
     mapRef.current?.flyTo([match.place.lat, match.place.lng], 11, { duration: 0.75 });
+  }, []);
+
+  const handleViewIdentification = useCallback((identification: HistoricalPlaceIdentification) => {
+    mapRef.current?.flyTo([identification.lat, identification.lng], identification.precision === 'site' ? 13 : 10, { duration: 0.8 });
   }, []);
 
   const handleSelectTravelStart = useCallback((place: TravelPlace) => {
@@ -807,8 +837,6 @@ export default function BibleMap() {
       const zoom = map.getZoom();
       const bounds = map.getBounds().pad(0.15);
 
-      const minImportance = zoom >= 11 ? 3 : zoom >= 8 ? 2 : 1;
-
       visibleAreas.forEach(area => {
         const polygon = L.polygon(area.boundary, {
           color: area.color,
@@ -827,69 +855,95 @@ export default function BibleMap() {
         group.addLayer(polygon);
       });
 
-      const placesToRender = passageStudy ? BIBLICAL_PLACE_CLUSTERS : visibleBiblicalPlaces;
-      placesToRender.forEach(place => {
-        const passageMatch = passageStudy?.matches.find(match => match.place.id === place.id);
-        if (passageStudy && !passageMatch) return;
-        const imp = place.importance;
-        if (!passageStudy && imp > minImportance) return;
-        if (!passageStudy && !bounds.contains([place.lat, place.lng])) return;
+      const placesToRender = (passageStudy
+        ? passageStudy.matches.map(match => match.place)
+        : filteredBiblicalPlaces
+      ).filter(place => passageStudy || bounds.contains([place.lat, place.lng]));
+      const mapClusters = clusterHistoricalPlaces(
+        placesToRender,
+        zoom,
+        (lat, lng) => map.project([lat, lng], zoom),
+      );
 
+      mapClusters.forEach(mapCluster => {
+        if (mapCluster.places.length > 1) {
+          const count = mapCluster.places.length;
+          const diameter = count >= 100 ? 48 : count >= 20 ? 42 : count >= 5 ? 36 : 32;
+          const clusterMarker = L.marker([mapCluster.lat, mapCluster.lng], {
+            icon: L.divIcon({
+              className: 'historical-place-cluster-icon',
+              html: `<div class="historical-place-cluster" style="width:${diameter}px;height:${diameter}px"><strong>${count}</strong><span>places</span></div>`,
+              iconSize: [diameter, diameter],
+              iconAnchor: [diameter / 2, diameter / 2],
+            }),
+            keyboard: true,
+            title: `${count} historical places`,
+          });
+          clusterMarker.bindTooltip(`${count} historical places · zoom to explore`, { direction: 'top', className: 'biblical-place-tooltip' });
+          clusterMarker.on('click', event => {
+            L.DomEvent.stopPropagation(event);
+            if (map.getZoom() < 13) {
+              map.flyTo([mapCluster.lat, mapCluster.lng], Math.min(13, map.getZoom() + 2), { duration: 0.65 });
+              return;
+            }
+
+            const popupContent = document.createElement('div');
+            popupContent.className = 'historical-cluster-list';
+            const heading = document.createElement('strong');
+            heading.textContent = `${count} records at this site`;
+            popupContent.appendChild(heading);
+            mapCluster.places.slice(0, 30).forEach(place => {
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.textContent = place.name;
+              button.onclick = () => {
+                setSelectedBiblicalPlace(place);
+                map.closePopup();
+              };
+              popupContent.appendChild(button);
+            });
+            if (count > 30) {
+              const remainder = document.createElement('small');
+              remainder.textContent = `+${count - 30} more records — refine with the type filter`;
+              popupContent.appendChild(remainder);
+            }
+            L.popup({ maxWidth: 300, maxHeight: 360 })
+              .setLatLng([mapCluster.lat, mapCluster.lng])
+              .setContent(popupContent)
+              .openOn(map);
+          });
+          group.addLayer(clusterMarker);
+          return;
+        }
+
+        const place = mapCluster.places[0];
+        const passageMatch = passageStudy?.matches.find(match => match.place.id === place.id);
         const isPassagePlace = Boolean(passageMatch);
         const isTravelEndpoint = travelStart?.id === place.id || travelEnd?.id === place.id;
-
-        const circleColor = isPassagePlace ? '#4f46e5' : isTravelEndpoint ? '#0f766e' : imp === 1 ? '#92400e' : imp === 2 ? '#b45309' : '#d97706';
-        const radius = isPassagePlace || isTravelEndpoint ? 8 : imp === 1 ? 6 : imp === 2 ? 5 : 4;
-        const fontSize = imp === 1 ? '12px' : imp === 2 ? '11px' : '10px';
-        const textColor = isPassagePlace ? '#3730a3' : isTravelEndpoint ? '#115e59' : imp === 1 ? '#78350f' : '#92400e';
+        const isSelected = selectedBiblicalPlace?.id === place.id;
+        const circleColor = isPassagePlace ? '#4f46e5' : isTravelEndpoint ? '#0f766e' : place.importance === 1 ? '#92400e' : place.importance === 2 ? '#b45309' : '#d97706';
+        const radius = isSelected ? 9 : isPassagePlace || isTravelEndpoint ? 8 : place.importance === 1 ? 7 : place.importance === 2 ? 6 : 5;
+        const displayName = selectedBook ? place.namesByBook[selectedBook]?.[0] ?? place.name : place.name;
 
         const circle = L.circleMarker([place.lat, place.lng], {
           radius,
-          color: '#fff',
-          weight: 1.5,
+          color: isSelected ? '#2e6f7e' : '#fff',
+          weight: isSelected ? 4 : 1.5,
           fillColor: circleColor,
-          fillOpacity: isPassagePlace || isTravelEndpoint ? 1 : 0.9,
+          fillOpacity: 0.96,
           interactive: true,
           bubblingMouseEvents: true,
         });
-
-        const displayName = selectedBook ? place.namesByBook[selectedBook]?.[0] ?? place.name : place.name;
-        const references = selectedBook ? place.referencesByBook[selectedBook] ?? [] : place.references;
-        const displayAliases = selectedBook ? place.namesByBook[selectedBook]?.slice(1) ?? [] : place.aliases;
-
         circle.bindTooltip(displayName, {
-          permanent: false,
           direction: 'top',
           offset: [0, -radius - 2],
-          className: '',
-          opacity: 0.95,
+          className: 'biblical-place-tooltip',
+          opacity: 0.97,
         });
-
-        circle.on('add', () => {
-          const el = (circle as unknown as { _tooltip?: { _container?: HTMLElement } })._tooltip?._container;
-          if (el) {
-            Object.assign(el.style, {
-              background: 'rgba(255,251,235,0.92)',
-              border: '1px solid #d97706',
-              borderRadius: '4px',
-              color: textColor,
-              fontSize,
-              fontWeight: imp === 1 ? '700' : '600',
-              fontFamily: 'system-ui, sans-serif',
-              padding: '2px 5px',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-              whiteSpace: 'nowrap',
-            });
-            const tipEl = el.querySelector('.leaflet-tooltip-top') as HTMLElement;
-            if (tipEl) tipEl.style.borderTopColor = '#d97706';
-          }
-        });
-
-        // If in path drawing mode, clicking this place adds it as a waypoint
-        circle.on('click', e => {
+        circle.on('click', event => {
+          L.DomEvent.stopPropagation(event);
           if (isDrawingPathRef.current) {
-            L.DomEvent.stopPropagation(e);
-            const newPt: MapPathPoint = {
+            const newPoint: MapPathPoint = {
               id: `pt-${Date.now()}-${Math.random().toString(36).substring(7)}`,
               name: displayName,
               lat: place.lat,
@@ -897,29 +951,11 @@ export default function BibleMap() {
               place_id: place.id,
               kind: 'biblical',
             };
-            setDrawingPoints(prev => [...prev, newPt]);
+            setDrawingPoints(current => [...current, newPoint]);
+            return;
           }
+          setSelectedBiblicalPlace(place);
         });
-
-        const aliases = displayAliases.slice(0, 8);
-        const referenceText = references.slice(0, 6).join(' · ');
-        const passageReference = passageMatch ? formatPassageVerseLabel(passageStudy!.selection, passageMatch.verses) : null;
-
-        circle.bindPopup(`
-          <div style="font-family:system-ui,sans-serif;min-width:190px;">
-            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
-              <span style="font-size:16px;">✝️</span>
-              <strong style="font-size:14px;color:#111827;">${displayName}</strong>
-            </div>
-            ${place.note ? `<p style="font-size:12px;color:#6b7280;margin:0 0 5px;">${place.note}</p>` : ''}
-            ${aliases.length ? `<p style="font-size:11px;color:#92400e;margin:0 0 6px;line-height:1.35;"><strong>Also known as:</strong> ${aliases.join(', ')}${place.aliases.length > aliases.length ? '…' : ''}</p>` : ''}
-            ${passageReference ? `<div style="font-size:11px;color:#4338ca;font-weight:700;margin-bottom:4px;">✦ In this passage: ${passageReference}</div>` : ''}
-            ${isTravelEndpoint ? `<div style="font-size:11px;color:#0f766e;font-weight:700;margin-bottom:4px;">● Journey ${travelStart?.id === place.id ? 'start (A)' : 'end (B)'}</div>` : ''}
-            <div style="font-size:11px;color:#d97706;font-weight:600;">📖 ${referenceText}</div>
-            ${selectedBook ? `<div style="font-size:11px;color:#6b7280;margin-top:5px;">Referenced in ${selectedBook}</div>` : ''}
-          </div>
-        `, { maxWidth: 280 });
-
         group.addLayer(circle);
       });
     };
@@ -930,7 +966,7 @@ export default function BibleMap() {
       map.off('moveend zoomend', renderOverlay);
       group.clearLayers();
     };
-  }, [selectedBook, showBiblicalLayer, visibleAreas, visibleBiblicalPlaces, passageStudy, travelStart, travelEnd]);
+  }, [selectedBook, showBiblicalLayer, visibleAreas, filteredBiblicalPlaces, passageStudy, travelStart, travelEnd, selectedBiblicalPlace]);
 
   // ─── Click anywhere on map dismisses search pin ────────────────────────
   useEffect(() => {
@@ -1342,7 +1378,8 @@ export default function BibleMap() {
           setDrawingPoints([]);
           setShowCreatePathModal(true);
         }}
-        biblicalPlaceCount={visibleBiblicalPlaces.length}
+        biblicalPlaceCount={filteredBiblicalPlaces.length}
+        totalBiblicalPlaceCount={BIBLICAL_PLACE_COUNT}
         selectedBook={selectedBook}
         onSelectBook={book => {
           setSelectedBook(book);
@@ -1353,6 +1390,10 @@ export default function BibleMap() {
         }}
         showBiblicalPlaces={showBiblicalLayer}
         onToggleBiblicalPlaces={() => setShowBiblicalLayer(value => !value)}
+        placeKind={placeKind}
+        onSelectPlaceKind={setPlaceKind}
+        placeCoverage={placeCoverage}
+        onSelectPlaceCoverage={setPlaceCoverage}
         passageStudy={passageStudy}
         passageLoading={passageLoading}
         passageError={passageError}
@@ -1384,6 +1425,15 @@ export default function BibleMap() {
           order: r.sortOrder,
         }))}
       />
+
+      {selectedBiblicalPlace && (
+        <HistoricalPlaceDetails
+          place={selectedBiblicalPlace}
+          selectedBook={selectedBook}
+          onClose={() => setSelectedBiblicalPlace(null)}
+          onViewIdentification={handleViewIdentification}
+        />
+      )}
 
       {/* Floating active-study badge */}
       {(passageStudy || travelInsight || focusedPath) && (

@@ -31,7 +31,7 @@ Auto-navigation index. See `KNOWLEDGE_GRAPH.md` for architecture/data-model narr
 | Change entity tagging on verses | `src/components/entities/TagEntityModal.tsx`, `EntityChipBar.tsx`, `EntityTag.tsx`, `src/hooks/useEntityMentions.ts` |
 | Change Entity Explorer page | `src/components/entities/EntityExplorer.tsx`, `EntityDetailSidebar.tsx` (⚠ page not routed, see above) |
 | Change People Atlas (family tree/timeline) | `src/components/atlas/PeopleAtlas.tsx`, `PersonNode.tsx`, `RelationshipEdge.tsx`, `TimelineBands.tsx`, `src/hooks/usePeopleAtlas.ts`, `useTimelinePeriods.ts` |
-| Change Biblical Map | `src/components/map/BibleMap.tsx`, `MapSearchBar.tsx`, `MapSidebar.tsx`, `TerritoryEvidenceCard.tsx`, `PassageMapPanel.tsx`, `TravelInsightPanel.tsx`, `CreatePlaceModal.tsx`, `src/lib/passagePlaces.ts`, `src/lib/territorySearch.ts`, `src/lib/travelInsights.ts`, `src/data/biblicalAreas.ts`, `src/data/biblicalPlaces.ts`, `src/data/biblicalTerritories.ts` |
+| Change Biblical Map | `src/components/map/BibleMap.tsx`, `HistoricalPlaceDetails.tsx`, `MapSearchBar.tsx`, `MapSidebar.tsx`, `TerritoryEvidenceCard.tsx`, `PassageMapPanel.tsx`, `TravelInsightPanel.tsx`, `CreatePlaceModal.tsx`, `src/lib/mapClustering.ts`, `src/lib/passagePlaces.ts`, `src/lib/territorySearch.ts`, `src/lib/travelInsights.ts`, `src/data/biblicalAreas.ts`, `src/data/biblicalPlaces.ts`, `src/data/generated/openBiblePlaces.json`, `src/data/biblicalTerritories.ts` |
 | Change global verse search | `src/pages/SearchPage.tsx`, `searchVerses()` in `src/lib/supabase.ts` |
 | Change routing / page shell / nav | `src/App.tsx`, `src/components/layout/AppShell.tsx`, `Header.tsx`, `Sidebar.tsx` |
 | Change Bible text fetching (KJV) | `src/lib/bibleApi.ts`, `src/lib/bibleWorker.ts` (web worker), `public/kjv.json` |
@@ -44,7 +44,7 @@ Auto-navigation index. See `KNOWLEDGE_GRAPH.md` for architecture/data-model narr
 ## src/
 
 ### src/App.tsx
-Root component. Wraps everything in `ReactFlowProvider` and defines all routes via `react-router-dom`. Routes: `/` → Dashboard, `/topic/:id` → TopicGraphView, `/topics/network` → TopicsNetwork, `/search` → SearchPage, `/atlas` → ContextAtlasPage, `/map` → MapAtlasPage. **No `/entities` route** (see Known Inconsistencies).
+Root component. Wraps everything in `ReactFlowProvider`/`Suspense` and defines routes via `react-router-dom`. The large historical map/catalog route (`/map`) is lazy-loaded as its own chunk; other routes are eager. **No `/entities` route** (see Known Inconsistencies).
 
 ### src/main.tsx
 App entry point. Sets up `QueryClientProvider` (React Query) and `BrowserRouter`, renders `<App />` into `#root`.
@@ -169,16 +169,19 @@ Generic slide-in right sidebar shell (close button + scrollable content area). U
 ## src/components/map/
 
 ### src/components/map/BibleMap.tsx
-Main Leaflet map component (route `/map` via `MapAtlasPage`). Imperative Leaflet setup in refs (not react-leaflet declarative API) — map, tile layer, book-filtered biblical-location pins, passage-highlight pins, personal markers, saved-person routes, and temporary travel-insight route layers are managed via `useEffect` + refs. Full-bleed map layout with `MapSidebar` overlaying from the left and a floating active study badge when passage or travel insights are active.
+Main Leaflet map component (route `/map` via `MapAtlasPage`). Imperative Leaflet setup manages tile/territory layers, all-record historical-place clustering, book/coverage/type filters, passage highlights, selected-place records, personal markers, saved-person routes, and travel layers. Full-bleed layout with `MapSidebar`, `HistoricalPlaceDetails`, and the active-study badge.
 
 ### src/components/map/CreatePlaceModal.tsx
 Custom fixed-overlay modal (name + description) for either naming a newly placed location or editing an existing saved place. Not built on the shared `Modal` component.
 
+### src/components/map/HistoricalPlaceDetails.tsx
+Evidence-forward place-record panel for a selected catalog place. Shows type/precision, source confidence, translation names, expandable Scripture references, primary/alternate geographic identifications, candidate map-focus actions, and pinned OpenBible attribution.
+
 ### src/components/map/MapSearchBar.tsx
-Bible-aware map search embedded in the left map sidebar. Searches saved places, the current book-filtered `BIBLICAL_PLACE_CLUSTERS` names/aliases (and cited references), and the local historical-territory catalog; deliberately never falls back to external geocoding. Ranks exact/canonical matches first, supports keyboard navigation, and exports `SearchContext` for `BibleMap.handleFlyTo`.
+Bible-aware map search embedded in the left map sidebar. Searches saved places, the current book-filtered historical catalog's names/translation aliases/references, and local historical territories; deliberately never falls back to external geocoding. Ranks exact/canonical matches first and passes stable place ids through exported `SearchContext` so selection opens the evidence record.
 
 ### src/components/map/MapSidebar.tsx
-Collapsible left-side map dock. Exports `BibleRegion` and `BIBLE_REGIONS` for focused map views; contains Explore, Passage, Journey, and Library accordions, saved-place management, and separately labeled person routes. It renders a compact territory evidence card immediately below map search so territory context never blocks the map.
+Collapsible left-side map dock containing Explore, Passage, Journey, Paths, and Library accordions. Explore exposes Bible-book, catalog-coverage, and historical-place-type filters plus the represented/total count; the dock also owns saved-place management, person routes, and the non-blocking territory evidence card.
 
 ### src/components/map/TerritoryEvidenceCard.tsx
 Compact in-sidebar evidence card for a selected historical people or kingdom. Distinguishes source confidence bands, source rough outlines, attested-site lenses, and truly unresolved groups; shows references/source attribution without blocking the map. Exports `TerritoryEvidenceCard`.
@@ -215,7 +218,10 @@ Static, deliberately approximate historical study-area polygons (Canaan, Egypt/S
 Vetted historical evidence catalog used by the Kingdoms & Peoples map search. Embeds unchanged OpenBible CC-BY 4.0 isobands plus the sourced Hatti rough outline; provides site-based lenses for the Hivite Gibeonite towns and Amorite historical centers, and explicit unresolved records for groups that cannot be responsibly mapped. Exports selection/data types, `SOURCE_BACKED_TERRITORIES`, `SITE_BACKED_HISTORICAL_LENSES`, and `GROUPS_WITHOUT_SOURCE_BACKED_TERRITORY`.
 
 ### src/data/biblicalPlaces.ts
-OpenBible.info (CC-BY) raw place dictionary plus curated regional/common-place additions and 72 current-source supplements with a cited verse and coordinate. Exports raw `BiblicalPlace`/`BIBLICAL_PLACES`, normalized `BiblicalPlaceCluster`/`BIBLICAL_PLACE_CLUSTERS`, and count constants. Clusters consolidate coordinate duplicates and nearby alternate estimates, retain aliases/references, per-book names/references/mention counts, and importance tiers for the map/search UI.
+Typed adapter over the generated OpenBible snapshot. Exports historical place kind/confidence/precision/coverage types and labels, `BiblicalPlaceCluster`, `BIBLICAL_PLACE_CLUSTERS`, source metadata, and counts; derives per-book indexes and search text without collapsing distinct ancient records that share a coordinate.
+
+### src/data/generated/openBiblePlaces.json
+Compact generated snapshot of the pinned OpenBible.info Bible Geocoding JSONL revision (CC BY 4.0): 1,335 mappable ancient records from 1,342 source records. Contains stable ids, translation aliases, complete cataloged references, types, primary point/precision, alternate resolutions, and confidence scores; regenerated by `scripts/import-openbible.mjs`.
 
 ## src/hooks/
 
@@ -260,6 +266,9 @@ Static `BIBLE_BOOKS` array (all 66 books: name/abbrev/testament/group/chapters/v
 ### src/lib/bibleWorker.ts
 Web Worker (module worker, loaded by `bibleApi.ts` via `new Worker(new URL(...))`). Lazily fetches and caches `/kjv.json` (local full-KJV dataset, not `bible-api.com` despite the name — despite README's claim of external API, actual verse lookups run fully offline against this local dataset). Handles `fetchKjvVerseRange`, `fetchKjvBook`, and `fetchKjvCustomVerses` message types, returning multi-line `[ch:v] text` strings.
 
+### src/lib/mapClustering.ts
+Pure projected-screen clustering for historical map records. Exports `clusterHistoricalPlaces()` and cluster/point interfaces; changes grid size by zoom and at close zoom groups only truly co-located records.
+
 ### src/lib/passagePlaces.ts
 Pure passage-to-map matching utility. Exports selection/study/match types plus `findPlacesInPassage()` and `findPlacesInBook()`, which join local KJV `[chapter:verse]` text with catalog references and safe biblical-name matching (including selected KJV spelling variants); also formats passage and matched-verse labels for map UI.
 
@@ -284,7 +293,7 @@ Small helpers: `formatDate()`, `buildAnchorKey(cleanWord, occurrenceIndex)` / `p
 ## src/styles/
 
 ### src/styles/index.css
-Tailwind directives + global resets + extensive React Flow customization (handle styling/hover states, per-side handle offsets) + custom animations (`animate-in slide-in-from-right`, atlas expand, etc.) + `.verse-node`/`.person-node`/`.entity-chip-bar`/search-highlight styles. Not exhaustively inventoried line-by-line — check directly for exact class definitions when styling.
+Tailwind directives + global resets + React Flow customization + custom animations and node/entity styles. Also owns Leaflet historical-cluster markers, place tooltips, and the accessible co-located-record popup list styling (including dark mode).
 
 ## supabase/migrations/
 
@@ -301,7 +310,8 @@ Chronological order (by filename prefix):
 
 ## Config files
 
-- **package.json** — Vite + React 18 + TypeScript app named `bible-flow`. Key deps: `@xyflow/react` (graph canvas), `@supabase/supabase-js`, `@tanstack/react-query`, `react-router-dom` v6, `leaflet`/`react-leaflet` (map — though `BibleMap.tsx` uses imperative `leaflet` directly, not `react-leaflet` components), `html-to-image` (PNG export), `kjv` (npm package, though actual verse data is served from `public/kjv.json`, not this package — verify which is actually used before assuming). Scripts: `dev`, `build` (`tsc -b && vite build`), `lint`, `preview`.
+- **package.json** — Vite + React 18 + TypeScript app named `bible-flow`. Key deps include React Flow, Supabase/React Query, React Router, Leaflet, and `html-to-image`. Scripts: `dev`, `build`, `lint`, `preview`, and `data:openbible` (regenerates the versioned historical-place snapshot).
+- **scripts/import-openbible.mjs** — Dependency-free Node importer for the pinned OpenBible `ancient.jsonl`. Preserves each ancient identity, normalizes names/references/types/resolutions/confidence, and writes `src/data/generated/openBiblePlaces.json`; accepts optional `--input`/`--output` paths.
 - **vite.config.ts** — `@` path alias → `./src`. `vite-plugin-pwa` with `autoUpdate` registration, full manifest (name "Bible Flow"), Workbox runtime caching: CacheFirst for `bible-api.com` (30-day, up to 1000 entries — legacy, see `bibleWorker.ts` note above about actually using local `kjv.json`), NetworkFirst for `*.supabase.co` (1-day, up to 500 entries).
 - **tailwind.config.js** — `darkMode: 'class'`. Custom `edge.*` and `verse.*` color extensions mirroring `src/lib/edgeTypes.ts` (kept in sync manually — not imported from TS, duplicated by hand).
 - **tsconfig.json** — Root project-references config pointing to `tsconfig.app.json` + `tsconfig.node.json`.
