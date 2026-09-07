@@ -151,7 +151,7 @@ export default function CreatePathModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    <div role="dialog" aria-modal="true" aria-label={initialPath ? 'Edit marked path' : 'Label and save path'} className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div
         className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}

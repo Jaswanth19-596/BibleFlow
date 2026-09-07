@@ -35,6 +35,9 @@ Create meaningful relationships between verses with typed connections:
 - **Link Creation UI**: Drag between topic nodes to create new relationships
 
 ### Biblical Map
+- **Historical eras**: Twelve discrete study periods, named snapshots, scoped place names and seventeen separate narrative itineraries. Use the timeline or phone dock to choose an era; Fit era moves the camera explicitly. Share era/snapshot selections through the URL.
+- **Evidence and study overrides**: Curated era membership intersects with book/type/coverage filters. Passage results, selected route stops and explicit broader-search pins remain labeled study overrides. Unclassified does not mean historically absent. Saved/drafted personal work stays independent.
+- **Physical backdrop**: Bundled Natural Earth land, Sea of Galilee and northern Dead Sea without modern political labels, plus an explicit Modern map option. Site halos indicate narrative context, and dashed journey lines indicate schematic sequence; neither claims precise historical boundaries or roads.
 - **Focused study dock**: A collapsible left-side dock keeps Explore, Passage, Journey, and Library controls available without covering the map with modals
 - **Complete historical-place catalog**: Browse 1,335 mappable ancient-place records generated from the pinned OpenBible Bible Geocoding dataset (1,342 source records), with stable source ids, complete cataloged verse references, translation names, and place types
 - **No hidden catalog tiers**: Every record matching the active filters is represented at every zoom. Screen-space clustering keeps the map readable, and exact shared sites remain grouped into a selectable record list instead of burying overlapping pins
@@ -119,6 +122,18 @@ Create meaningful relationships between verses with typed connections:
    npm run dev
    ```
    Open [http://localhost:5173](http://localhost:5173)
+
+### Historical era validation and physical data
+
+```bash
+npm run data:validate-eras
+npm run test:eras
+npm run data:basemap
+```
+
+The first two commands run offline against the checked-in catalog/content using the existing Vite/Node toolchain. The last reproduces the physical map from pinned Natural Earth v5.1.2 URLs; local source files can be passed as two arguments. See [historical source policy and exact manifest](docs/historical-era-sources.md) and [verification results](docs/historical-era-verification.md). No database migration is required.
+
+The production service worker precaches era data and physical geography as versioned JavaScript chunks. Once cached, this static exploration can work without the application server. External modern map tiles are not reliably available offline. Personal Supabase content and uncached Bible text have their own availability limits.
 
 ### Refreshing the Historical-Place Catalog
 
@@ -323,7 +338,10 @@ const rangeText = await fetchKjvVerseRange('Romans', 8, 28, 30);
 | `npm run dev` | Start dev server (port 5173) |
 | `npm run build` | Type check and build for production |
 | `npm run preview` | Preview production build locally |
-| `npm run lint` | Run ESLint on all files |
+| `npm run lint` | Run the configured ESLint 9 checks |
+| `npm run data:validate-eras` | Validate historical IDs, sources, scopes, references and geometry |
+| `npm run test:eras` | Run historical resolver and invalid-data regression tests |
+| `npm run data:basemap` | Reproduce pinned Natural Earth physical geography |
 
 ## Deployment
 
@@ -345,3 +363,9 @@ MIT - Use freely for personal, church, or commercial projects.
 ---
 
 Built for studying and connecting God's Word. 📖✝️
+
+### Performance migration and verification
+
+Apply `supabase/migrations/009_performance.sql` after the existing migrations using the Supabase SQL editor. It adds the batched dashboard count function and indexes for the existing substring search, preserving caller permissions. The application retains a bounded legacy count fallback until the function is available. This migration has not been applied automatically; large existing tables may take time to build their indexes.
+
+Run `node scripts/test-performance.mjs` for worker/map equivalence checks and diagnostic timings against Git HEAD, plus `npm run test:eras`, `npm run lint`, and `npm run build`. See `docs/performance-audit.md` for measurements and validation limits.

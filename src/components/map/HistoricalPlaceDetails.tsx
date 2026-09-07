@@ -1,3 +1,6 @@
+import type { EraSelection } from '@/lib/historicalEraTypes';
+import { getEraAnnotation, getNameAssertion, PLACE_BY_ID } from '@/lib/historicalEraResolver';
+import { EvidenceLinks } from './HistoricalEraPanel';
 import { useEffect, useState } from 'react';
 import {
   BIBLICAL_PLACE_SOURCE,
@@ -8,6 +11,7 @@ import {
 
 interface HistoricalPlaceDetailsProps {
   place: BiblicalPlaceCluster;
+  displayName: string; eraSelection: EraSelection; isRepresented: boolean; onShowOnMap: () => void; onViewRelated: (id: string) => void;
   selectedBook: string | null;
   onClose: () => void;
   onViewIdentification: (identification: HistoricalPlaceIdentification) => void;
@@ -65,7 +69,9 @@ function IdentificationRow({
   );
 }
 
-export default function HistoricalPlaceDetails({ place, selectedBook, onClose, onViewIdentification }: HistoricalPlaceDetailsProps) {
+export default function HistoricalPlaceDetails({ place, displayName, eraSelection, isRepresented, onShowOnMap, onViewRelated, selectedBook, onClose, onViewIdentification }: HistoricalPlaceDetailsProps) {
+  const annotation = getEraAnnotation(place.id, eraSelection);
+  const nameAssertion = getNameAssertion(place.id, eraSelection);
   const [showAllReferences, setShowAllReferences] = useState(false);
   const references = selectedBook ? place.referencesByBook[selectedBook] ?? [] : place.references;
   const visibleReferences = showAllReferences ? references : references.slice(0, 36);
@@ -75,7 +81,7 @@ export default function HistoricalPlaceDetails({ place, selectedBook, onClose, o
   useEffect(() => setShowAllReferences(false), [place.id, selectedBook]);
 
   return (
-    <aside className="absolute bottom-16 left-3 right-3 z-[1220] max-h-[58dvh] overflow-hidden border border-stone-300 bg-[#fffcf5]/97 shadow-2xl shadow-stone-950/20 backdrop-blur-xl dark:border-stone-700 dark:bg-[#151714]/97 sm:bottom-3 sm:left-auto sm:right-3 sm:top-3 sm:max-h-none sm:w-[380px]" aria-label={`${place.name} historical place record`}>
+    <aside data-map-obstruction="details" className="absolute bottom-16 left-3 right-3 z-[1220] max-h-[58dvh] overflow-hidden border border-stone-300 bg-[#fffcf5]/97 shadow-2xl shadow-stone-950/20 backdrop-blur-xl dark:border-stone-700 dark:bg-[#151714]/97 sm:bottom-3 sm:left-auto sm:right-3 sm:top-3 sm:max-h-none sm:w-[380px]" aria-label={`${displayName} historical place record`}>
       <div className="flex h-full max-h-[inherit] flex-col">
         <header className="shrink-0 border-b border-stone-300 px-5 pb-4 pt-4 dark:border-stone-700">
           <div className="flex items-center justify-between gap-3">
@@ -84,7 +90,7 @@ export default function HistoricalPlaceDetails({ place, selectedBook, onClose, o
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
-          <h2 className="mt-1 font-serif text-3xl font-semibold leading-tight text-stone-950 dark:text-stone-50">{place.name}</h2>
+          <h2 className="mt-1 font-serif text-3xl font-semibold leading-tight text-stone-950 dark:text-stone-50">{displayName}</h2>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500 dark:text-stone-400">
             <span>{HISTORICAL_PLACE_KIND_LABELS[place.kind]}</span>
             <span>{PRECISION_LABELS[place.locationPrecision]}</span>
@@ -93,6 +99,14 @@ export default function HistoricalPlaceDetails({ place, selectedBook, onClose, o
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <section className="mb-4 space-y-2 border-b pb-4 text-xs leading-5 text-slate-600 dark:text-slate-300">
+            {eraSelection.eraId && <><h3 className="font-semibold">During this era</h3><p>{annotation?.reason ?? 'Not classified for this era. Missing classification does not imply that this place did not exist.'}</p>{annotation && <EvidenceLinks ids={annotation.evidenceIds} />}</>}
+            <p>{nameAssertion ? `Reviewed name: ${nameAssertion.name}.` : `Catalog/book-lens label; no dated name assertion for this selection.`} Original catalog label: {place.name}.</p>
+            {nameAssertion && <EvidenceLinks ids={nameAssertion.evidenceIds} />}
+            {nameAssertion?.relatedPlaceIds?.length ? <p>Related ancient identities (kept separate): {nameAssertion.relatedPlaceIds.map(id => <button key={id} className="ml-1 underline" onClick={() => onViewRelated(id)}>{PLACE_BY_ID.get(id)?.name ?? 'Related record'}</button>)}</p> : null}
+            {!isRepresented && <p>Outside the current place filters or the Places layer is hidden.</p>}
+            <button className="min-h-11 underline" onClick={onShowOnMap}>Show on map</button>
+          </section>
           <div className={`border px-3 py-2.5 text-xs ${confidenceClass[place.confidence]}`}>
             <div className="flex items-center justify-between gap-3 font-bold">
               <span>{CONFIDENCE_LABELS[place.confidence]}</span>

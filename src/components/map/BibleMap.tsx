@@ -42,6 +42,28 @@ import {
   distanceInKm,
 } from '@/lib/travelInsights';
 import { clusterHistoricalPlaces } from '@/lib/mapClustering';
+import { useHistoricalEra } from '@/hooks/useHistoricalEra';
+import { useHistoricalBaseMap } from '@/hooks/useHistoricalBaseMap';
+import { useHistoricalEraLayers } from '@/hooks/useHistoricalEraLayers';
+import { getEraAnnotation, labelPlace, resolveHistoricalView, resolvePlaceLabel } from '@/lib/historicalEraResolver';
+import HistoricalEraControl from './HistoricalEraControl';
+import HistoricalEraPanel from './HistoricalEraPanel';
+
+function escapeHtml(value: string) { return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
+
+
+function getStudyPadding(map: L.Map, shell: HTMLElement | null): L.FitBoundsOptions {
+    const rect = map.getContainer().getBoundingClientRect();
+    let left = 24, right = 50, bottom = 24;
+    shell?.querySelectorAll<HTMLElement>('[data-map-obstruction]').forEach(el => {
+      const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
+      if (window.innerWidth < 640) bottom = Math.max(bottom, rect.bottom - r.top + 16);
+      else if (el.dataset.mapObstruction === 'dock') left = Math.max(left, r.right - rect.left + 16);
+      else if (el.dataset.mapObstruction === 'details') right = Math.max(right, rect.right - r.left + 16);
+      else bottom = Math.max(bottom, rect.bottom - r.top + 16);
+    });
+    return { paddingTopLeft: [Math.min(left, rect.width * .4), 24], paddingBottomRight: [Math.min(right, rect.width * .35), Math.min(bottom, rect.height * .65)] };
+}
 
 // Create a proper default icon
 const DefaultIcon = L.icon({
@@ -92,6 +114,18 @@ export default function BibleMap() {
   const { relationships, createRelationship, deleteRelationship } = usePeopleAtlas();
   const { paths: savedPaths, createPath, updatePath, deletePath } = useMapPaths();
 
+  const historical = useHistoricalEra();
+  const { selection: eraSelection } = historical;
+  const [readyMap, setReadyMap] = useState<L.Map | null>(null);
+  const [basemap, setBasemap] = useState<'physical' | 'modern'>('physical');
+  const [historicalRouteId, setHistoricalRouteId] = useState<string | null>(null);
+  const [studyFocusId, setStudyFocusId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 640);
+  const [representedCount, setRepresentedCount] = useState(0);
+  const searchTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const passageOperation = useRef(0);
+  const snapPlaces = useRef<BiblicalPlaceCluster[]>([]);
+  const mapShellRef = useRef<HTMLDivElement>(null);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [clickCoord, setClickCoord] = useState<{ lat: number; lng: number } | null>(null);
@@ -104,7 +138,8 @@ export default function BibleMap() {
   const [placeKind, setPlaceKind] = useState<HistoricalPlaceKind | 'all'>('all');
   const [placeCoverage, setPlaceCoverage] = useState<HistoricalPlaceCoverage>('all');
   const [selectedBiblicalPlace, setSelectedBiblicalPlace] = useState<BiblicalPlaceCluster | null>(null);
-  const [bookPlaceMatches, setBookPlaceMatches] = useState<BookPlaceMatch[]>([]);
+  const [bookResults, setBookResults] = useState<{ book: string | null; matches: BookPlaceMatch[] }>({ book: null, matches: [] });
+  const bookPlaceMatches = useMemo(() => bookResults.book === selectedBook ? bookResults.matches : [], [bookResults, selectedBook]);
   const [passageStudy, setPassageStudy] = useState<PassageStudy | null>(null);
   const [passageLoading, setPassageLoading] = useState(false);
   const [passageError, setPassageError] = useState<string | null>(null);
@@ -174,35 +209,59 @@ export default function BibleMap() {
 
     return Array.from(visible.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [bookPlaceMatches, selectedBook]);
-  const filteredBiblicalPlaces = useMemo(() => {
-    const maximumImportance = placeCoverage === 'major' ? 1 : placeCoverage === 'major-regional' ? 2 : 3;
-    return visibleBiblicalPlaces.filter(place =>
-      place.importance <= maximumImportance && (placeKind === 'all' || place.kind === placeKind)
-    );
-  }, [placeCoverage, placeKind, visibleBiblicalPlaces]);
+  const eraView = useMemo(() => resolveHistoricalView({
+    selection: eraSelection, bookPlaces: visibleBiblicalPlaces, book: selectedBook,
+    coverage: placeCoverage, kind: placeKind, passageActive: Boolean(passageStudy),
+    passageIds: passageStudy?.matches.map(m => m.place.id), focusId: studyFocusId,
+    routeId: historicalRouteId, journeys: historical.layers.journeys,
+  }), [eraSelection.eraId, eraSelection.snapshotId, visibleBiblicalPlaces, selectedBook, placeCoverage, placeKind, passageStudy, studyFocusId, historicalRouteId, historical.layers.journeys]);
+  const placeLabel = useCallback((place: BiblicalPlaceCluster) => resolvePlaceLabel(place.id, eraSelection.eraId, eraSelection.snapshotId, selectedBook, place), [eraSelection.eraId, eraSelection.snapshotId, selectedBook]);
+  useHistoricalBaseMap(readyMap, basemap);
+  useHistoricalEraLayers(readyMap, eraView.areas, eraView.routes, eraView.records, historical.layers, showBiblicalLayer);
+  useEffect(() => { snapPlaces.current = showBiblicalLayer ? eraView.records : []; }, [eraView.records, showBiblicalLayer]);
+  useEffect(() => {
+    mapRef.current?.stop();
+    mapRef.current?.closePopup();
+    mapRef.current?.eachLayer(layer => { if (layer instanceof L.Tooltip && !layer.options.permanent) layer.remove(); });
+    setStudyFocusId(null);
+    setHistoricalRouteId(null);
+    if (eraSelection.eraId && selectedTerritory) { setSelectedTerritory(null); historical.announce('Previous territory highlight cleared; its outline has no reviewed era date.'); }
+  }, [eraSelection.eraId, eraSelection.snapshotId]);
+  useEffect(() => {
+    searchTimers.current.forEach(clearTimeout); searchTimers.current = [];
+    searchPinRef.current?.remove(); searchPinRef.current = null;
+    return () => { searchTimers.current.forEach(clearTimeout); searchPinRef.current?.remove(); };
+  }, [eraSelection.eraId, eraSelection.snapshotId, selectedBook, showBiblicalLayer]);
+  useEffect(() => () => { passageOperation.current++; }, []);
+  const fitEra = useCallback(() => {
+    if (!readyMap || !eraView.era) return;
+    const padding = getStudyPadding(readyMap, mapShellRef.current);
+    const [[west, south], [east, north]] = eraView.era.bounds;
+    readyMap.fitBounds([[south, west], [north, east]], { ...padding, animate: false });
+  }, [readyMap, eraView.era]);
 
   useEffect(() => {
     if (!selectedBook) {
-      setBookPlaceMatches([]);
+      setBookResults({ book: selectedBook, matches: [] });
       return;
     }
 
     let cancelled = false;
     fetchKjvBook(selectedBook)
       .then(text => {
-        if (!cancelled) setBookPlaceMatches(findPlacesInBook(selectedBook, text));
+        if (!cancelled) setBookResults({ book: selectedBook, matches: findPlacesInBook(selectedBook, text) });
       })
       .catch(() => {
         // The catalog's cited references remain available if the local KJV
         // file cannot be loaded.
-        if (!cancelled) setBookPlaceMatches([]);
+        if (!cancelled) setBookResults({ book: selectedBook, matches: [] });
       });
 
     return () => { cancelled = true; };
   }, [selectedBook]);
   const visibleAreas = useMemo(
-    () => selectedBook ? BIBLICAL_AREAS.filter(area => area.books.includes(selectedBook)) : [],
-    [selectedBook]
+    () => selectedBook && !eraSelection.eraId ? BIBLICAL_AREAS.filter(area => area.books.includes(selectedBook)) : [],
+    [selectedBook, eraSelection.eraId]
   );
 
   const places = useMemo(() => {
@@ -217,7 +276,7 @@ export default function BibleMap() {
   const travelPlaces = useMemo<TravelPlace[]>(() => [
     ...BIBLICAL_PLACE_CLUSTERS.map(place => ({
       id: place.id,
-      name: place.name,
+      name: placeLabel(place),
       lat: place.lat,
       lng: place.lng,
       kind: 'biblical' as const,
@@ -231,11 +290,11 @@ export default function BibleMap() {
       kind: 'saved' as const,
       detail: place.description || undefined,
     })),
-  ].sort((a, b) => a.name.localeCompare(b.name)), [places]);
+  ].sort((a, b) => a.name.localeCompare(b.name)), [places, placeLabel]);
 
   const travelInsight = useMemo(
-    () => travelStart && travelEnd && travelStart.id !== travelEnd.id ? buildTravelInsight(travelStart, travelEnd) : null,
-    [travelStart, travelEnd],
+    () => travelStart && travelEnd && travelStart.id !== travelEnd.id ? buildTravelInsight(travelPlaces.find(p => p.id === travelStart.id) ?? travelStart, travelPlaces.find(p => p.id === travelEnd.id) ?? travelEnd) : null,
+    [travelStart, travelEnd, travelPlaces],
   );
   const selectedTravelOption = useMemo(
     () => travelInsight?.options.find(option => option.id === selectedTravelOptionId) ?? null,
@@ -344,90 +403,22 @@ export default function BibleMap() {
   const handleFlyTo = useCallback((lat: number, lng: number, zoom = 11, context?: SearchContext) => {
     const map = mapRef.current;
     if (!map) return;
-
+    searchTimers.current.forEach(clearTimeout); searchTimers.current = [];
+    searchPinRef.current?.remove(); searchPinRef.current = null;
     if (context?.placeId) {
-      const place = BIBLICAL_PLACE_CLUSTERS.find(candidate => candidate.id === context.placeId);
-      if (place) {
-        setSelectedBiblicalPlace(place);
-        setShowBiblicalLayer(true);
-      }
+      const place = BIBLICAL_PLACE_CLUSTERS.find(p => p.id === context.placeId);
+      if (place) { setSelectedBiblicalPlace(place); setStudyFocusId(place.id); }
     }
-
-    // Remove previous search pin
-    if (searchPinRef.current) {
-      searchPinRef.current.remove();
-      searchPinRef.current = null;
+    map.flyTo([lat, lng], zoom, { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 0.75 });
+    if (context && (context.source !== 'biblical' || showBiblicalLayer)) {
+      searchTimers.current.push(setTimeout(() => {
+        if (mapRef.current !== map) return;
+        const label = document.createElement('div'); label.className = 'era-study-pin'; label.textContent = context.name;
+        const details = document.createElement('div'); details.textContent = `${context.name} — ${context.description || 'Personal study content'}`;
+        searchPinRef.current = L.marker([lat, lng], { icon: L.divIcon({ className: '', html: label, iconSize: [160, 36], iconAnchor: [80, 36] }), title: context.name, zIndexOffset: 1000 }).addTo(map).bindPopup(details);
+      }, 300));
     }
-
-    map.flyTo([lat, lng], zoom, { duration: 1.5 });
-
-    if (context) {
-      setTimeout(() => {
-        if (!mapRef.current) return;
-
-        const isSource = context.source === 'biblical';
-        const pinIcon = L.divIcon({
-          className: '',
-          html: `<div style="
-            position:relative;
-            display:flex;flex-direction:column;align-items:center;
-          ">
-            <div style="
-              background:${isSource ? '#b45309' : '#4f46e5'};
-              color:white;
-              padding:5px 10px;
-              border-radius:8px;
-              font-size:13px;
-              font-weight:700;
-              white-space:nowrap;
-              box-shadow:0 3px 10px rgba(0,0,0,0.35);
-              border:2px solid white;
-              max-width:200px;
-              overflow:hidden;
-              text-overflow:ellipsis;
-            ">${context.name}</div>
-            <div style="
-              width:0;height:0;
-              border-left:7px solid transparent;
-              border-right:7px solid transparent;
-              border-top:10px solid ${isSource ? '#b45309' : '#4f46e5'};
-              margin-top:-1px;
-            "></div>
-            <div style="
-              width:10px;height:10px;border-radius:50%;
-              background:${isSource ? '#b45309' : '#4f46e5'};
-              border:2px solid white;
-              margin-top:-2px;
-              box-shadow:0 2px 6px rgba(0,0,0,0.3);
-            "></div>
-          </div>`,
-          iconSize: [200, 60],
-          iconAnchor: [100, 58],
-        });
-
-        const popupContent = `
-          <div style="min-width:180px;font-family:system-ui,sans-serif;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span style="font-size:18px;">${isSource ? '✝️' : '📍'}</span>
-              <h3 style="font-weight:700;font-size:15px;margin:0;color:#111827;">${context.name}</h3>
-            </div>
-            ${context.description ? `<p style="font-size:12px;color:#6b7280;margin:0 0 6px;line-height:1.4;">${context.description}</p>` : ''}
-            ${context.aliases?.length ? `<p style="font-size:11px;color:#92400e;margin:0 0 6px;line-height:1.4;">Also known as: ${context.aliases.slice(0, 6).join(', ')}${context.aliases.length > 6 ? '…' : ''}</p>` : ''}
-            <div style="font-size:11px;color:#9ca3af;border-top:1px solid #f3f4f6;padding-top:6px;margin-top:4px;">
-              ${isSource ? '📖 Biblical location' : '🌍 Modern location'}
-            </div>
-          </div>
-        `;
-
-        const pin = L.marker([lat, lng], { icon: pinIcon, zIndexOffset: 1000 })
-          .addTo(mapRef.current)
-          .bindPopup(popupContent, { offset: [0, -55], maxWidth: 240 });
-
-        setTimeout(() => pin.openPopup(), 400);
-        searchPinRef.current = pin;
-      }, 800);
-    }
-  }, []);
+  }, [showBiblicalLayer]);
 
   const handleMapPassage = async (selection: PassageSelection) => {
     const maxVerse = getVersesInChapter(selection.book, selection.chapter);
@@ -436,6 +427,7 @@ export default function BibleMap() {
       return;
     }
 
+    const operation = ++passageOperation.current;
     setPassageLoading(true);
     setPassageError(null);
     try {
@@ -445,15 +437,18 @@ export default function BibleMap() {
         selection.verseStart,
         selection.verseEnd,
       );
+      if (operation !== passageOperation.current) return;
       const matches = findPlacesInPassage(selection, passageText);
       setPassageStudy({ selection, matches });
       setSelectedBook(selection.book);
       setShowBiblicalLayer(true);
+      if (matches.length && mapRef.current) mapRef.current.fitBounds(L.latLngBounds(matches.map(m => [m.place.lat, m.place.lng] as [number, number])), { ...getStudyPadding(mapRef.current, mapShellRef.current), maxZoom: 10, animate: false });
       if (!passageText) setPassageError('The passage text could not load; results use cataloged verse references only.');
     } catch {
+      if (operation !== passageOperation.current) return;
       setPassageError('The passage text could not load. Please try again.');
     } finally {
-      setPassageLoading(false);
+      if (operation === passageOperation.current) setPassageLoading(false);
     }
   };
 
@@ -694,11 +689,6 @@ export default function BibleMap() {
     });
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19,
-    }).addTo(map);
 
     // Biblical overlay layer group
     const layerGroup = L.layerGroup().addTo(map);
@@ -716,7 +706,7 @@ export default function BibleMap() {
 
       if (isDrawingPathRef.current) {
         // Find nearby biblical or saved place within ~4km (0.04 deg) to snap name cleanly
-        const nearbyBiblical = BIBLICAL_PLACE_CLUSTERS.find(
+        const nearbyBiblical = snapPlaces.current.find(
           p => Math.hypot(p.lat - lat, p.lng - lng) < 0.04
         );
         const name = nearbyBiblical?.name || `Waypoint ${drawingPointsRef.current.length + 1}`;
@@ -739,6 +729,7 @@ export default function BibleMap() {
     });
 
     mapRef.current = map;
+    setReadyMap(map);
 
     return () => {
       map.remove();
@@ -755,7 +746,7 @@ export default function BibleMap() {
     if (!map || !group) return;
 
     group.clearLayers();
-    if (!selectedTerritory) return;
+    if (!selectedTerritory || eraSelection.eraId) return;
 
     if ('sites' in selectedTerritory) {
       const boundsPoints: [number, number][] = [];
@@ -822,7 +813,7 @@ export default function BibleMap() {
         animate: true,
       });
     }
-  }, [selectedTerritory]);
+  }, [selectedTerritory, eraSelection.eraId]);
 
   // ─── Biblical places overlay ────────────────────────────────────────────
   useEffect(() => {
@@ -832,7 +823,7 @@ export default function BibleMap() {
 
     const renderOverlay = () => {
       group.clearLayers();
-      if (!showBiblicalLayer) return;
+      if (!showBiblicalLayer) { setRepresentedCount(0); return; }
 
       const zoom = map.getZoom();
       const bounds = map.getBounds().pad(0.15);
@@ -855,10 +846,8 @@ export default function BibleMap() {
         group.addLayer(polygon);
       });
 
-      const placesToRender = (passageStudy
-        ? passageStudy.matches.map(match => match.place)
-        : filteredBiblicalPlaces
-      ).filter(place => passageStudy || bounds.contains([place.lat, place.lng]));
+      const placesToRender = eraView.records.filter(place => eraView.overrideReasons.has(place.id) || bounds.contains([place.lat, place.lng]));
+      setRepresentedCount(placesToRender.filter(place => bounds.contains([place.lat, place.lng])).length);
       const mapClusters = clusterHistoricalPlaces(
         placesToRender,
         zoom,
@@ -895,7 +884,7 @@ export default function BibleMap() {
             mapCluster.places.slice(0, 30).forEach(place => {
               const button = document.createElement('button');
               button.type = 'button';
-              button.textContent = place.name;
+              button.textContent = placeLabel(place);
               button.onclick = () => {
                 setSelectedBiblicalPlace(place);
                 map.closePopup();
@@ -923,7 +912,7 @@ export default function BibleMap() {
         const isSelected = selectedBiblicalPlace?.id === place.id;
         const circleColor = isPassagePlace ? '#4f46e5' : isTravelEndpoint ? '#0f766e' : place.importance === 1 ? '#92400e' : place.importance === 2 ? '#b45309' : '#d97706';
         const radius = isSelected ? 9 : isPassagePlace || isTravelEndpoint ? 8 : place.importance === 1 ? 7 : place.importance === 2 ? 6 : 5;
-        const displayName = selectedBook ? place.namesByBook[selectedBook]?.[0] ?? place.name : place.name;
+        const displayName = placeLabel(place);
 
         const circle = L.circleMarker([place.lat, place.lng], {
           radius,
@@ -934,7 +923,7 @@ export default function BibleMap() {
           interactive: true,
           bubblingMouseEvents: true,
         });
-        circle.bindTooltip(displayName, {
+        circle.bindTooltip(escapeHtml(displayName), {
           direction: 'top',
           offset: [0, -radius - 2],
           className: 'biblical-place-tooltip',
@@ -954,25 +943,37 @@ export default function BibleMap() {
             setDrawingPoints(current => [...current, newPoint]);
             return;
           }
-          setSelectedBiblicalPlace(place);
+          setSelectedBiblicalPlace(BIBLICAL_PLACE_CLUSTERS.find(p => p.id === place.id) ?? place);
         });
         group.addLayer(circle);
+        const element = circle.getElement();
+        if (element) {
+          element.setAttribute('tabindex', '0'); element.setAttribute('role', 'button'); element.setAttribute('aria-label', displayName);
+          element.addEventListener('keydown', event => { const key = (event as KeyboardEvent).key; if (key === 'Enter' || key === ' ') { event.preventDefault(); circle.fire('click'); } });
+        }
       });
     };
 
     renderOverlay();
-    map.on('moveend zoomend', renderOverlay);
+    let frame: number | null = null;
+    const scheduleRender = () => {
+      if (frame === null) frame = requestAnimationFrame(() => { frame = null; renderOverlay(); });
+    };
+    map.on('moveend zoomend', scheduleRender);
     return () => {
-      map.off('moveend zoomend', renderOverlay);
+      map.off('moveend zoomend', scheduleRender);
+      if (frame !== null) cancelAnimationFrame(frame);
       group.clearLayers();
     };
-  }, [selectedBook, showBiblicalLayer, visibleAreas, filteredBiblicalPlaces, passageStudy, travelStart, travelEnd, selectedBiblicalPlace]);
+  }, [selectedBook, showBiblicalLayer, visibleAreas, eraView.records, placeLabel, passageStudy, travelStart, travelEnd, selectedBiblicalPlace]);
 
   // ─── Click anywhere on map dismisses search pin ────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const handler = () => {
+      searchTimers.current.forEach(clearTimeout); searchTimers.current = [];
+      setStudyFocusId(null);
       if (searchPinRef.current) {
         searchPinRef.current.remove();
         searchPinRef.current = null;
@@ -1330,7 +1331,7 @@ export default function BibleMap() {
   }, [travelInsight, selectedTravelOption]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div ref={mapShellRef} data-sidebar-collapsed={sidebarCollapsed} className="era-map-shell isolate relative h-full w-full overflow-hidden">
       {/* Map fills 100% of viewport */}
       <div
         ref={mapContainerRef}
@@ -1348,9 +1349,26 @@ export default function BibleMap() {
         />
       )}
 
+      <div className="era-desktop-timeline"><HistoricalEraControl selection={eraSelection} onPreview={historical.preview} onCommit={historical.commit} onFit={fitEra} /></div>
+      {eraView.era && !representedCount && showBiblicalLayer && sidebarCollapsed && <button className="era-mobile-fit" onClick={fitEra}>No places here · Fit era</button>}
+      {historical.status.startsWith('Unknown era') && <p className="absolute right-3 top-3 z-[1190] max-w-72 rounded-lg bg-white p-3 text-xs text-slate-700 shadow">{historical.status}</p>}
+      <p className="sr-only" role="status" aria-live="polite">{historical.status}</p>
       {/* Sidebar overlays from the left */}
       <MapSidebar
-        searchSlot={<MapSearchBar places={places} biblicalPlaces={visibleBiblicalPlaces} selectedBook={selectedBook} onFlyTo={handleFlyTo} onSelectTerritory={setSelectedTerritory} />}
+        eraLabel={eraView.era?.label ?? 'All eras'}
+        onCollapsedChange={setSidebarCollapsed}
+        detailPlaceId={selectedBiblicalPlace?.id ?? null}
+        onReturnToAllEras={() => historical.commit({ eraId: null, snapshotId: null })}
+        eraControl={<HistoricalEraControl selection={eraSelection} onPreview={historical.preview} onCommit={historical.commit} onFit={fitEra} />}
+        eraPanel={<>
+          <HistoricalEraPanel era={eraView.era} selection={eraSelection} layers={historical.layers} onLayers={historical.setLayers} showPlaces={showBiblicalLayer} onPlaces={() => setShowBiblicalLayer(v => !v)} routeId={historicalRouteId} routes={eraView.availableRoutes} onRoute={setHistoricalRouteId} book={selectedBook} onSnapshot={snapshotId => historical.commit({ ...eraSelection, snapshotId })} onFocus={id => { const p = BIBLICAL_PLACE_CLUSTERS.find(p => p.id === id); if (p) handleFlyTo(p.lat, p.lng, 10, { name: placeLabel(p), source: 'biblical', description: 'Historical journey study stop', placeId: id }); }} />
+          <div className="mt-3 space-y-2 text-xs leading-5"><label className="block">Backdrop<select aria-label="Map backdrop" value={basemap} onChange={e => setBasemap(e.target.value as 'physical' | 'modern')} className="ml-2 rounded border bg-transparent p-2"><option value="physical">Physical geography</option><option value="modern">Modern map</option></select></label><p>{basemap === 'physical' ? 'Natural Earth 5.1.2: schematic modern coastlines, not reconstructed ancient geography. Close-up detail is available in Modern map.' : 'Modern geographic reference. Modern labels and borders remain visible; external tiles are not available reliably offline.'}</p></div>
+          <p className="mt-3 text-xs">{eraView.counts.eligible} eligible catalog records · {eraView.counts.filtered} match filters · {representedCount} represented in this view · {eraView.counts.overrides} study overrides.</p>
+          {(!representedCount || !eraView.counts.filtered) && <div className="mt-3 space-y-2 text-xs"><p>{!showBiblicalLayer ? 'Historical places are hidden.' : 'No ordinary places match the filters or current viewport.'} Book: {selectedBook ?? 'all'}; type: {placeKind}; coverage: {placeCoverage}. Passage and journey overrides remain separate.</p><div className="flex flex-wrap gap-2"><button onClick={() => { setSelectedBook(null); setPlaceKind('all'); setPlaceCoverage('all'); }}>Clear book/type/coverage</button><button onClick={fitEra}>Fit era</button><button onClick={() => historical.commit({ eraId: null, snapshotId: null })}>All eras</button></div></div>}
+          {historical.status && <p className="mt-2 text-xs">{historical.status}</p>}
+          {eraSelection.eraId && selectedTerritory && <p className="mt-2 text-xs">This general territory has no reviewed date for this era. Its evidence remains available; its outline is hidden. <button className="underline" onClick={() => historical.commit({ eraId: null, snapshotId: null })}>Return to All eras</button></p>}
+        </>}
+        searchSlot={<MapSearchBar places={places} biblicalPlaces={eraView.searchPlaces} eraSelection={eraSelection} eraAreas={eraView.areas} onSelectEraArea={area => { historical.setLayers(current => ({ ...current, areas: true })); historical.announce(`${area.name}: ${area.uncertainty}`); fitEra(); }} selectedBook={selectedBook} onFlyTo={handleFlyTo} onSelectTerritory={setSelectedTerritory} />}
         territorySelection={selectedTerritory}
         onClearTerritory={() => setSelectedTerritory(null)}
         selectedPersonId={selectedPersonId}
@@ -1378,10 +1396,11 @@ export default function BibleMap() {
           setDrawingPoints([]);
           setShowCreatePathModal(true);
         }}
-        biblicalPlaceCount={filteredBiblicalPlaces.length}
+        biblicalPlaceCount={representedCount}
         totalBiblicalPlaceCount={BIBLICAL_PLACE_COUNT}
         selectedBook={selectedBook}
         onSelectBook={book => {
+          passageOperation.current++; setPassageLoading(false);
           setSelectedBook(book);
           if (passageStudy && passageStudy.selection.book !== book) {
             setPassageStudy(null);
@@ -1394,18 +1413,20 @@ export default function BibleMap() {
         onSelectPlaceKind={setPlaceKind}
         placeCoverage={placeCoverage}
         onSelectPlaceCoverage={setPlaceCoverage}
-        passageStudy={passageStudy}
+        passageStudy={passageStudy ? { ...passageStudy, matches: passageStudy.matches.map(m => ({ ...m, place: labelPlace(m.place, eraSelection, selectedBook) })) } : null}
+        eraSelection={eraSelection}
         passageLoading={passageLoading}
         passageError={passageError}
         onMapPassage={handleMapPassage}
         onClearPassage={() => {
+          passageOperation.current++; setPassageLoading(false);
           setPassageStudy(null);
           setPassageError(null);
         }}
         onFocusPassagePlace={handleFocusPassagePlace}
         travelPlaces={travelPlaces}
-        travelStart={travelStart}
-        travelEnd={travelEnd}
+        travelStart={travelInsight?.start ?? travelStart}
+        travelEnd={travelInsight?.end ?? travelEnd}
         travelInsight={travelInsight}
         selectedTravelOptionId={selectedTravelOptionId}
         onSelectTravelStart={handleSelectTravelStart}
@@ -1429,6 +1450,11 @@ export default function BibleMap() {
       {selectedBiblicalPlace && (
         <HistoricalPlaceDetails
           place={selectedBiblicalPlace}
+          displayName={placeLabel(selectedBiblicalPlace)}
+          eraSelection={eraSelection}
+          isRepresented={showBiblicalLayer && eraView.records.some(p => p.id === selectedBiblicalPlace.id)}
+          onViewRelated={id => { const p = BIBLICAL_PLACE_CLUSTERS.find(p => p.id === id); if (p) handleFlyTo(p.lat, p.lng, 11, { name: placeLabel(p), source: 'biblical', description: 'Related ancient identity', placeId: id }); }}
+          onShowOnMap={() => { setShowBiblicalLayer(true); handleFlyTo(selectedBiblicalPlace.lat, selectedBiblicalPlace.lng, 11, { name: placeLabel(selectedBiblicalPlace), source: 'biblical', description: getEraAnnotation(selectedBiblicalPlace.id, eraSelection)?.reason ?? 'Not classified for this era', placeId: selectedBiblicalPlace.id }); }}
           selectedBook={selectedBook}
           onClose={() => setSelectedBiblicalPlace(null)}
           onViewIdentification={handleViewIdentification}
@@ -1437,14 +1463,14 @@ export default function BibleMap() {
 
       {/* Floating active-study badge */}
       {(passageStudy || travelInsight || focusedPath) && (
-        <div className="absolute bottom-16 left-1/2 z-[1190] w-[calc(100%-2rem)] -translate-x-1/2 sm:bottom-6 sm:z-[1210] sm:w-auto">
+        <div className="absolute bottom-16 left-1/2 z-[1190] w-[calc(100%-2rem)] -translate-x-1/2 sm:bottom-36 sm:z-[1190] sm:w-auto">
           <div className="flex max-w-full items-center gap-3 overflow-x-auto rounded-full border border-white/50 bg-white/90 px-4 py-2 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/90">
             {passageStudy && (
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-slate-700 dark:bg-slate-300" />
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{passageStudy.selection.book} {passageStudy.selection.chapter}</span>
                 <span className="text-[10px] text-slate-500">· {passageStudy.matches.length} places</span>
-                <button onClick={() => { setPassageStudy(null); setPassageError(null); }} className="ml-1 rounded-full p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Clear passage">
+                <button onClick={() => { passageOperation.current++; setPassageLoading(false); setPassageStudy(null); setPassageError(null); }} className="ml-1 rounded-full p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Clear passage">
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
@@ -1454,7 +1480,7 @@ export default function BibleMap() {
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-slate-700 dark:bg-slate-300" />
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{travelInsight.start.name} → {travelInsight.end.name}</span>
-                <span className="text-[10px] text-slate-500">· {Math.round(travelInsight.directDistanceKm)} km</span>
+                <span className="text-[10px] text-slate-500">· Study estimate · {Math.round(travelInsight.directDistanceKm)} km</span>
                 <button onClick={() => { setTravelStart(null); setTravelEnd(null); setSelectedTravelOptionId('overland'); }} className="ml-1 rounded-full p-0.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Clear travel">
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>

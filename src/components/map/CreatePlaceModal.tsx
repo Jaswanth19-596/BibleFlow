@@ -36,7 +36,7 @@ export default function CreatePlaceModal({ open, onClose, onSubmit, coord, place
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/30 backdrop-blur-sm">
       <form
         onSubmit={handleSubmit}
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 w-full max-w-sm"

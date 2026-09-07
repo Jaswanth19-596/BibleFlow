@@ -156,7 +156,8 @@ export default function TopicsNetwork() {
     if (!hasInitializedEdges.current) return;
 
     setEdges((prevEdges) => {
-      const currentLinkIds = new Set(links.map(l => l.id));
+      const linksById = new Map(links.map(l => [l.id, l]));
+      const currentLinkIds = new Set(linksById.keys());
       const prevEdgeIds = new Set(prevEdges.map(e => e.id));
 
       // Remove edges that no longer exist
@@ -179,7 +180,7 @@ export default function TopicsNetwork() {
 
       // Update labels for existing edges without recreating them
       const updatedEdges = keptEdges.map(edge => {
-        const link = links.find(l => l.id === edge.id);
+        const link = linksById.get(edge.id);
         if (link && edge.label !== link.description) {
           return { ...edge, label: link.description || '' };
         }

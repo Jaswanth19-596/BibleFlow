@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "data:openbible": "node scripts/import-openbible.mjs"
+    "data:openbible": "node scripts/import-openbible.mjs",
+    "test:eras": "node scripts/test-historical-eras.mjs",
+    "data:validate-eras": "node scripts/validate-historical-eras.mjs",
+    "data:basemap": "node scripts/prepare-historical-basemap.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

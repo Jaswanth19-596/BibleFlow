@@ -1,3 +1,6 @@
+import type { EraSelection, HistoricalAreaSnapshot } from '@/lib/historicalEraTypes';
+import { BIBLICAL_PLACE_CLUSTERS } from '@/data/biblicalPlaces';
+import { getEraAnnotation, labelPlace } from '@/lib/historicalEraResolver';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Entity } from '@/lib/types';
 import { BiblicalPlaceCluster, HISTORICAL_PLACE_KIND_LABELS } from '@/data/biblicalPlaces';
@@ -18,7 +21,8 @@ interface TerritoryResult {
   isMapped: boolean;
 }
 
-type MapSearchResult = SearchResult | TerritoryResult;
+interface EraAreaResult { id: string; name: string; description: string; source: 'era-area'; area: HistoricalAreaSnapshot }
+type MapSearchResult = SearchResult | TerritoryResult | EraAreaResult;
 
 export interface SearchContext {
   name: string; description: string; source: 'local' | 'biblical'; aliases?: string[]; placeId?: string;
@@ -26,6 +30,8 @@ export interface SearchContext {
 
 interface MapSearchBarProps {
   places: Entity[];
+  eraSelection: EraSelection;
+  eraAreas: HistoricalAreaSnapshot[]; onSelectEraArea: (area: HistoricalAreaSnapshot) => void;
   biblicalPlaces: BiblicalPlaceCluster[];
   selectedBook: string | null;
   onFlyTo: (lat: number, lng: number, zoom?: number, context?: SearchContext) => void;
@@ -58,7 +64,9 @@ const matchesBiblicalPlace = (place: BiblicalPlaceCluster, query: string) => {
   return names.includes(query) || (looksLikeReference && place.references.join(' ').toLowerCase().includes(query));
 };
 
-export default function MapSearchBar({ places = [], biblicalPlaces = [], selectedBook, onFlyTo, onSelectTerritory }: MapSearchBarProps) {
+export default function MapSearchBar({ places = [], biblicalPlaces = [], selectedBook, eraSelection, eraAreas, onSelectEraArea, onFlyTo, onSelectTerritory }: MapSearchBarProps) {
+  const [broader, setBroader] = useState(false);
+  useEffect(() => { setBroader(false); setActiveIndex(-1); }, [eraSelection.eraId, eraSelection.snapshotId, selectedBook]);
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -71,17 +79,17 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
     const saved: SearchResult[] = places
       .filter(place => place.name.toLowerCase().includes(normalized) || place.description?.toLowerCase().includes(normalized))
       .map(place => ({ id: `saved-${place.id}`, name: place.name, description: place.description || 'Saved study location', lat: place.lat!, lng: place.lng!, source: 'local' as const }));
-    const biblical: SearchResult[] = biblicalPlaces
+    const biblical: SearchResult[] = (broader ? BIBLICAL_PLACE_CLUSTERS.map(p => labelPlace(p, eraSelection, null)) : biblicalPlaces)
       .filter(place => matchesBiblicalPlace(place, normalized))
       .sort((a, b) => score(a, normalized) - score(b, normalized) || a.name.localeCompare(b.name))
       .slice(0, 12)
       .map(place => {
-        const names = selectedBook ? place.namesByBook[selectedBook] : undefined;
+        const names = [place.name, ...place.aliases];
         const references = selectedBook ? place.referencesByBook[selectedBook] ?? [] : place.references;
         return {
           id: place.id,
-          name: names?.[0] ?? place.name,
-          description: references.length ? [references.slice(0, 3).join(' · '), names && names.length > 1 ? `Also known as ${names.slice(1, 3).join(', ')}` : ''].filter(Boolean).join(' — ') : biblicalDescription(place),
+          name: place.name,
+          description: `${eraSelection.eraId ? getEraAnnotation(place.id, eraSelection) ? 'Included in this era · ' : 'Not classified for this era · ' : ''}` + (references.length ? [references.slice(0, 3).join(' · '), names && names.length > 1 ? `Also known as ${names.slice(1, 3).join(', ')}` : ''].filter(Boolean).join(' — ') : biblicalDescription(place)),
           lat: place.lat,
           lng: place.lng,
           source: 'biblical' as const,
@@ -89,7 +97,7 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
         };
       })
       .filter(place => !saved.some(savedPlace => savedPlace.name.toLowerCase() === place.name.toLowerCase()));
-    const territories: TerritoryResult[] = searchHistoricalTerritories(query).map(result => ({
+    const territories: TerritoryResult[] = (eraSelection.eraId && !broader ? [] : searchHistoricalTerritories(query)).map(result => ({
       id: `territory-${result.territory.id}`,
       name: result.territory.name,
       description: result.kind === 'territory'
@@ -99,10 +107,11 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
           : 'Historical location remains unresolved',
       source: 'territory' as const,
       territory: result.territory,
-      isMapped: hasMappedHistoricalEvidence(result.territory),
+      isMapped: !eraSelection.eraId && hasMappedHistoricalEvidence(result.territory),
     }));
-    return [...saved, ...biblical, ...territories];
-  }, [biblicalPlaces, places, query, selectedBook]);
+    const areaResults: EraAreaResult[] = eraAreas.filter(a => a.name.toLowerCase().includes(normalized)).map(area => ({ id: area.id, name: area.name, description: 'Current snapshot · narrative sites, no political border', source: 'era-area', area }));
+    return [...saved, ...biblical, ...areaResults, ...territories];
+  }, [biblicalPlaces, places, query, selectedBook, broader, eraSelection.eraId, eraSelection.snapshotId, eraAreas]);
 
   useEffect(() => setActiveIndex(-1), [query]);
   useEffect(() => {
@@ -112,6 +121,7 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
   }, []);
 
   const selectResult = useCallback((result: MapSearchResult) => {
+    if (result.source === 'era-area') { onSelectEraArea(result.area); setQuery(result.name); setIsOpen(false); return; }
     if (result.source === 'territory') {
       onSelectTerritory(result.territory);
       setQuery(result.name);
@@ -123,7 +133,7 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
     setQuery(result.name);
     setIsOpen(false);
     inputRef.current?.blur();
-  }, [onFlyTo, onSelectTerritory]);
+  }, [onFlyTo, onSelectTerritory, onSelectEraArea]);
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') return setIsOpen(false);
@@ -141,17 +151,18 @@ export default function MapSearchBar({ places = [], biblicalPlaces = [], selecte
           <input ref={inputRef} type="search" value={query} onChange={event => { setQuery(event.target.value); setIsOpen(true); }} onFocus={() => setIsOpen(true)} onKeyDown={onKeyDown} placeholder="Find a place, people, or kingdom…" className="min-w-0 flex-1 bg-transparent text-sm text-stone-900 outline-none placeholder:text-stone-400 dark:text-white" autoComplete="off" aria-label="Search biblical places, peoples, and kingdoms" />
           {query && <button onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200" aria-label="Clear search"><svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 6 12 12M18 6 6 18" /></svg></button>}
         </div>
-        <div className="border-t border-stone-100 px-4 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400 dark:border-stone-800">{selectedBook ? `${selectedBook} + your saved places` : 'Biblical catalog + your saved places'}</div>
+        <div className="border-t border-stone-100 px-4 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-stone-400 dark:border-stone-800">{broader ? 'All eras and books + saved places' : eraSelection.eraId ? 'Current era and book + saved places' : selectedBook ? `${selectedBook} + your saved places` : 'Biblical catalog + your saved places'}</div>
       </div>
 
       {isOpen && query.trim() && <div className="mt-2 max-h-[min(28rem,calc(100vh-8rem))] overflow-y-auto rounded-2xl border border-stone-200 bg-white/95 p-1.5 shadow-2xl shadow-stone-900/15 backdrop-blur-xl dark:border-stone-700 dark:bg-gray-900/95">
+        {!broader && <button className="w-full rounded-lg p-3 text-left text-xs font-semibold text-[#2e6f7e]" onClick={() => { setBroader(true); setActiveIndex(-1); }}>Search all eras and books</button>}
         {results.length === 0 ? <div className="px-4 py-5 text-center"><p className="text-sm font-medium text-stone-700 dark:text-stone-200">No biblical result matches that search.</p><p className="mt-1 text-xs text-stone-500">This search intentionally does not fall back to modern street addresses.</p></div> : results.map((result, index) => {
           const biblical = result.source === 'biblical';
           const territory = result.source === 'territory';
           const territoryStart = territory && results[index - 1]?.source !== 'territory';
           const activeClass = territory ? 'bg-[#dfecef] dark:bg-[#2e6f7e]/25' : biblical ? 'bg-amber-100/80 dark:bg-amber-950/50' : 'bg-indigo-100/70 dark:bg-indigo-950/50';
           const iconClass = territory ? 'bg-[#dfecef] text-[#2e6f7e] dark:bg-[#2e6f7e]/25 dark:text-[#9cc9d3]' : biblical ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300';
-          return <div key={result.id}>{territoryStart && <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">Historical peoples &amp; kingdoms</p>}<button onMouseDown={event => { event.preventDefault(); selectResult(result); }} onMouseEnter={() => setActiveIndex(index)} className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${activeIndex === index ? activeClass : 'hover:bg-stone-100 dark:hover:bg-stone-800'}`}>
+          return <div key={result.id}>{territoryStart && <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">Historical peoples &amp; kingdoms</p>}<button onClick={() => selectResult(result)} onMouseEnter={() => setActiveIndex(index)} className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${activeIndex === index ? activeClass : 'hover:bg-stone-100 dark:hover:bg-stone-800'}`}>
           <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${iconClass}`}>{territory ? (result.isMapped ? '◌' : 'i') : biblical ? '✦' : '●'}</span>
             <span className="min-w-0"><span className="block truncate text-sm font-semibold text-stone-900 dark:text-white">{result.name}</span><span className="mt-0.5 block truncate text-xs text-stone-500 dark:text-stone-400">{result.description}</span>{biblical && result.aliases && result.aliases.length > 2 && <span className="mt-1 block text-[10px] font-medium text-amber-700 dark:text-amber-400">+{result.aliases.length - 2} alternate biblical names</span>}{territory && !result.isMapped && <span className="mt-1 block text-[10px] font-medium text-slate-500 dark:text-slate-400">Evidence note — no border will be drawn</span>}{territory && result.isMapped && 'sites' in result.territory && <span className="mt-1 block text-[10px] font-medium text-[#2e6f7e] dark:text-[#9cc9d3]">Site lens — no border is implied</span>}</span>
           </button></div>;

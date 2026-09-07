@@ -187,8 +187,8 @@ export async function deleteTopicLink(id: string): Promise<void> {
 }
 
 // Search
-export async function searchVerses(query: string): Promise<VerseWithTopic[]> {
-  const { data, error } = await supabase
+export async function searchVerses(query: string, signal?: AbortSignal): Promise<VerseWithTopic[]> {
+  const request = supabase
     .from('verses')
     .select(`
       *,
@@ -197,6 +197,7 @@ export async function searchVerses(query: string): Promise<VerseWithTopic[]> {
     .or(`book.ilike.%${query}%,note.ilike.%${query}%,text.ilike.%${query}%`)
     .order('updated_at', { ascending: false })
     .limit(50);
+  const { data, error } = await (signal ? request.abortSignal(signal) : request);
   if (error) throw error;
   return (data || []).map(d => ({
     ...d,
@@ -206,6 +207,31 @@ export async function searchVerses(query: string): Promise<VerseWithTopic[]> {
 }
 
 // Stats
+export interface TopicCounts {
+  topic_id: string;
+  verse_count: number;
+  connection_count: number;
+}
+
+export async function getTopicCounts(topicIds: string[]): Promise<TopicCounts[]> {
+  if (!topicIds.length) return [];
+  const { data, error } = await supabase.rpc('get_topic_counts', { topic_ids: topicIds });
+  if (!error) return data ?? [];
+  // Keep older deployments usable until migration 009 is applied. Bound the
+  // fallback concurrency instead of launching three requests for every topic.
+  if (error.code !== 'PGRST202') throw error;
+  const counts: TopicCounts[] = [];
+  for (let start = 0; start < topicIds.length; start += 4) {
+    counts.push(...await Promise.all(topicIds.slice(start, start + 4).map(async topic_id => {
+      const [verse_count, connection_count] = await Promise.all([
+        getVerseCountByTopic(topic_id), getConnectionCountByTopic(topic_id),
+      ]);
+      return { topic_id, verse_count, connection_count };
+    })));
+  }
+  return counts;
+}
+
 export async function getVerseCountByTopic(topicId: string): Promise<number> {
   const { count, error } = await supabase
     .from('verses')
@@ -320,6 +346,21 @@ export async function deleteEntity(id: string): Promise<void> {
 }
 
 // ─── Entity Mentions ──────────────────────────────────────────────────────────
+
+/** Fetch a topic's tags in bounded pages, avoiding a request per verse. */
+export async function getMentionsByTopic(topicId: string): Promise<EntityMentionWithEntity[]> {
+  const mentions: EntityMentionWithEntity[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.from('entity_mentions')
+      .select('*, entity:entities(*), verse:verses!inner(topic_id)')
+      .eq('verse.topic_id', topicId).order('id').range(offset, offset + 499);
+    if (error) throw error;
+    mentions.push(...(data ?? []).map(({ verse: _verse, ...mention }) => ({
+      ...mention, entity: mention.entity || undefined,
+    })) as EntityMentionWithEntity[]);
+    if (!data || data.length < 500) return mentions;
+  }
+}
 
 export async function getMentionsByVerse(verseId: string): Promise<EntityMentionWithEntity[]> {
   const { data, error } = await supabase

@@ -14,8 +14,8 @@ export default function PathDrawingToolbar({
   onCancel,
 }: PathDrawingToolbarProps) {
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[470] animate-in fade-in slide-in-from-top-3 duration-200">
-      <div className="flex items-center gap-3 rounded-2xl border border-indigo-200/80 bg-white/95 px-4 py-2.5 shadow-2xl shadow-indigo-500/10 backdrop-blur-xl dark:border-indigo-900/50 dark:bg-slate-900/95">
+    <div data-drawing-toolbar className="absolute top-4 z-[1195]">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-indigo-200/80 bg-white/95 px-4 py-2.5 shadow-2xl shadow-indigo-500/10 backdrop-blur-xl dark:border-indigo-900/50 dark:bg-slate-900/95">
         {/* Drawing pulse indicator */}
         <div className="flex items-center gap-2 pr-2 border-r border-slate-200 dark:border-slate-800">
           <span className="relative flex h-3 w-3">

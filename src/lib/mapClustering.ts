@@ -31,7 +31,9 @@ export function clusterHistoricalPlaces(
           const point = project(place.lat, place.lng);
           return `${Math.floor(point.x / gridSize)}:${Math.floor(point.y / gridSize)}`;
         })();
-    cells.set(key, [...(cells.get(key) ?? []), place]);
+    const cell = cells.get(key);
+    if (cell) cell.push(place);
+    else cells.set(key, [place]);
   });
 
   return [...cells.entries()].map(([id, cellPlaces]) => {

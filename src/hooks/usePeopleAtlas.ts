@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEntities } from './useEntities';
 import { useTimelinePeriods } from './useTimelinePeriods';
@@ -19,7 +19,7 @@ export function usePeopleAtlas() {
   const { periods, loading: periodsLoading, createPeriod, updatePeriod, deletePeriod, reorderPeriods } = useTimelinePeriods();
 
   // All people entities
-  const people = entities.filter((e) => e.type === 'person');
+  const people = useMemo(() => entities.filter((e) => e.type === 'person'), [entities]);
 
   // All relationships
   const {

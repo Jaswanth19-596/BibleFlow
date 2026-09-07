@@ -77,7 +77,7 @@ function parsePassageText(text: string | null): PassageTextVerse[] {
   if (!text) return [];
   return text.split('\n').flatMap(line => {
     const match = line.match(/^\[(\d+):(\d+)\]\s*(.*)$/);
-    return match ? [{ chapter: Number(match[1]), verse: Number(match[2]), text: match[3] }] : [];
+    return match ? [{ chapter: Number(match[1]), verse: Number(match[2]), text: ` ${normalize(match[3])} ` }] : [];
   });
 }
 
@@ -94,17 +94,26 @@ function referenceVersesInSelection(reference: string, selection: PassageSelecti
   return result;
 }
 
-function namesFoundInVerse(place: BiblicalPlaceCluster, text: string) {
-  const normalizedText = ` ${normalize(text)} `;
-  const names = unique([place.name, ...place.aliases].flatMap(name => [
+const placeNames = new WeakMap<BiblicalPlaceCluster, { name: string; normalized: string }[]>();
+
+function getPlaceNames(place: BiblicalPlaceCluster) {
+  let names = placeNames.get(place);
+  if (!names) {
+    names = unique([place.name, ...place.aliases].flatMap(name => [
     name,
     ...(SCRIPTURE_NAME_VARIANTS[normalize(name)] ?? []),
   ]))
     .map(name => ({ name, normalized: normalize(name) }))
     .filter(({ normalized }) => (normalized.length >= 3 || SHORT_UNAMBIGUOUS_PLACE_NAMES.has(normalized)) && !NAME_MATCH_EXCLUSIONS.has(normalized))
     .sort((a, b) => b.normalized.length - a.normalized.length);
+    placeNames.set(place, names);
+  }
 
-  return names
+  return names;
+}
+
+function namesFoundInVerse(place: BiblicalPlaceCluster, normalizedText: string) {
+  return getPlaceNames(place)
     .filter(({ normalized }) => normalizedText.includes(` ${normalized} `))
     .map(({ name }) => name);
 }
@@ -121,8 +130,22 @@ export function findPlacesInBook(
 ): BookPlaceMatch[] {
   const matches = new Map<string, { place: BiblicalPlaceCluster; references: string[]; matchedNames: string[] }>();
 
+  // Only test names whose first word actually occurs in this verse. This
+  // preserves exact phrase matching without scanning every catalog record.
+  const byFirstWord = new Map<string, Set<BiblicalPlaceCluster>>();
+  for (const place of places) {
+    for (const { normalized } of getPlaceNames(place)) {
+      const word = normalized.split(' ')[0];
+      if (!byFirstWord.has(word)) byFirstWord.set(word, new Set());
+      byFirstWord.get(word)!.add(place);
+    }
+  }
   for (const verse of parsePassageText(bookText)) {
-    for (const place of places) {
+    const candidates = new Set<BiblicalPlaceCluster>();
+    for (const word of new Set(verse.text.trim().split(' '))) {
+      for (const place of byFirstWord.get(word) ?? []) candidates.add(place);
+    }
+    for (const place of candidates) {
       const names = namesFoundInVerse(place, verse.text);
       if (!names.length) continue;
 

@@ -44,7 +44,7 @@ Auto-navigation index. See `KNOWLEDGE_GRAPH.md` for architecture/data-model narr
 ## src/
 
 ### src/App.tsx
-Root component. Wraps everything in `ReactFlowProvider`/`Suspense` and defines routes via `react-router-dom`. The large historical map/catalog route (`/map`) is lazy-loaded as its own chunk; other routes are eager. **No `/entities` route** (see Known Inconsistencies).
+Root component. Defines routes inside `Suspense`; Dashboard is eager, graph/network/search/people/map pages are lazy. The topic graph owns its ReactFlowProvider, keeping React Flow out of dashboard startup. **No `/entities` route** (see Known Inconsistencies).
 
 ### src/main.tsx
 App entry point. Sets up `QueryClientProvider` (React Query) and `BrowserRouter`, renders `<App />` into `#root`.
@@ -58,7 +58,7 @@ Vite client type reference + `ImportMetaEnv` typing for `VITE_SUPABASE_URL` / `V
 Thin wrapper — renders `<PeopleAtlas />`. Route: `/atlas`.
 
 ### src/pages/Dashboard.tsx
-Topics listing page (route `/`). Fetches topics via `useTopics()`, verse/connection counts per topic via `getVerseCountByTopic`/`getConnectionCountByTopic`. Renders `TopicSearchBar`, `TopicGrid`, `NewTopicModal`, `EditTopicModal`, `ConfirmDialog`.
+Topics listing page (route `/`). Fetches topics via `useTopics()` and cached batched counts through `getTopicCounts()` (migration 009; bounded legacy fallback). Renders `TopicSearchBar`, `TopicGrid`, `NewTopicModal`, `EditTopicModal`, `ConfirmDialog`.
 
 ### src/pages/EntityExplorerPage.tsx
 Thin wrapper — renders `<EntityExplorer />`. **Not currently routed anywhere in `App.tsx`.**
@@ -70,7 +70,7 @@ Thin wrapper — renders `<BibleMap />` in a full-height container. Route: `/map
 Global verse search page (route `/search`). Debounced (300ms) search via `searchVerses()`, groups results by topic, click navigates to `/topic/:id?highlight=:verseId`.
 
 ### src/pages/TopicGraphView.tsx
-Main per-topic graph page (route `/topic/:id`). Orchestrates verses, connections, topic links, entity mentions, in-topic search, PNG export (`html-to-image`), topic rename, and a legacy verse-text migration effect (upgrades old plain-text verses to `[ch:v]` format on load). Contains a local `LinkTopicModal` for cross-topic linking. Renders `VerseFlowCanvas`, `VerseSidebar`, `ConnectionPopover`, `TagEntityModal`, `EntityDetailSidebar`.
+Main per-topic graph page (route `/topic/:id`), exported through a local ReactFlowProvider wrapper. Loads entity mentions by topic in pages, and imports PNG export code on demand. Orchestrates verses, connections, topic links, entity mentions, in-topic search, PNG export (`html-to-image`), topic rename, and a legacy verse-text migration effect (upgrades old plain-text verses to `[ch:v]` format on load). Contains a local `LinkTopicModal` for cross-topic linking. Renders `VerseFlowCanvas`, `VerseSidebar`, `ConnectionPopover`, `TagEntityModal`, `EntityDetailSidebar`.
 
 ### src/pages/TopicsNetwork.tsx
 Topic network graph page (route `/topics/network`). Self-contained React Flow instance (not `VerseFlowCanvas`) with a local `TopicNodeComponent`. Persists node positions to `localStorage` (`topicsNetworkPositions`). Drag between topic nodes → create `TopicLink`; click an edge → edit/delete via inline modals.
@@ -147,7 +147,7 @@ Inline popover for editing a `Connection`: type select, optional label, word-anc
 React Flow edge type `crossTopic`. Dashed blue bezier line for `TopicLink`s inside a per-topic graph, label shows `description`, click via `data.onClick`.
 
 ### src/components/graph/VerseFlowCanvas.tsx
-Core per-topic React Flow canvas. Registers node type `verse` (`VerseNode`) and edge types `connection`/`crossTopic`. Owns word-anchor selection state (`pendingAnchor`), builds nodes/edges from `verses`/`connections`/`topicLinks` with change-detection to avoid unnecessary React Flow node resets, computes optimal handle sides via `getOptimalHandles()`, debounces position saves (500ms via `useDebouncedCallback`), and implements search highlighting (`searchQuery` prop, ≥2 chars activates). `onConnect` auto-flips source/target if the pending anchor is on the drag target.
+Core per-topic React Flow canvas. Registers node type `verse` (`VerseNode`) and edge types `connection`/`crossTopic`. Owns word-anchor selection state (`pendingAnchor`), builds nodes/edges from `verses`/`connections`/`topicLinks` with change-detection to avoid unnecessary React Flow node resets, computes optimal handle sides via `getOptimalHandles()`, saves positions once per completed drag without a shared debounce, and implements search highlighting (`searchQuery` prop, ≥2 chars activates). `onConnect` auto-flips source/target if the pending anchor is on the drag target.
 
 ### src/components/graph/VerseNode.tsx
 React Flow node type `verse`. Renders per-line verse text (parses `[ch:v]` prefix → superscript), per-word click-to-anchor (`buildAnchorKey`/`parseAnchorKey` from `lib/utils.ts`), search-match highlighting, pending/established anchor styling, and embeds `EntityChipBar`. 4-sided handles. Exports `AnchorHighlight` and `VerseNodeData` types; default export wrapped in `memo`.
@@ -168,26 +168,39 @@ Generic slide-in right sidebar shell (close button + scrollable content area). U
 
 ## src/components/map/
 
+### src/components/map/HistoricalEraControl.tsx
+Accessible native category slider, direct dropdown, previous/next, snapshot caption, All eras and Fit era. Shares selection callbacks between desktop and mobile; RAF preview, single history commit per pointer gesture, keyboard and cancel handling.
+
+### src/components/map/HistoricalEraPanel.tsx
+Era summary, snapshot/layer choices, sourced ordered itineraries with unmapped gaps, uncertainty and coverage explanation. Exports default panel and reusable `EvidenceLinks({ ids })`.
+
+### src/components/map/CreatePathModal.tsx
+Personal path creation/editing from existing places or a drawn draft. Accepts path/point defaults and era-resolved available-place labels, preserves previously saved point names, supports reorder/style/color and distance calculation.
+
+### src/components/map/PathDrawingToolbar.tsx
+Personal drawing status and Undo/Finish/Cancel controls driven by point count and total distance. Drawing state lives in BibleMap and survives era changes.
+
+
 ### src/components/map/BibleMap.tsx
-Main Leaflet map component (route `/map` via `MapAtlasPage`). Imperative Leaflet setup manages tile/territory layers, all-record historical-place clustering, book/coverage/type filters, passage highlights, selected-place records, personal markers, saved-person routes, and travel layers. Full-bleed layout with `MapSidebar`, `HistoricalPlaceDetails`, and the active-study badge.
+Main Leaflet map (route `/map`). Composes shared era resolution with book/density filters, passage/route/focus overrides, measured camera fitting, accessible clustered pins, source evidence, saved places/paths, person routes, drawing and study travel estimates. Invalidates stale passage/search operations; era changes preserve personal work and camera position. Uses independent physical-base, era-context, journey and name layers.
 
 ### src/components/map/CreatePlaceModal.tsx
 Custom fixed-overlay modal (name + description) for either naming a newly placed location or editing an existing saved place. Not built on the shared `Modal` component.
 
 ### src/components/map/HistoricalPlaceDetails.tsx
-Evidence-forward place-record panel for a selected catalog place. Shows type/precision, source confidence, translation names, expandable Scripture references, primary/alternate geographic identifications, candidate map-focus actions, and pinned OpenBible attribution.
+Evidence-forward selected catalog record. Receives resolved display name, era/snapshot selection, representation state and explicit map/related-identity callbacks. Separates era relevance and scoped name evidence from original catalog label, confidence, references and alternative identifications. An out-of-filter selection stays inspectable.
 
 ### src/components/map/MapSearchBar.tsx
-Bible-aware map search embedded in the left map sidebar. Searches saved places, the current book-filtered historical catalog's names/translation aliases/references, and local historical territories; deliberately never falls back to external geocoding. Ranks exact/canonical matches first and passes stable place ids through exported `SearchContext` so selection opens the evidence record.
+Searches resolved catalog labels/aliases/references and saved places within the current era/book, plus compatible era context layers. Explicit broader search restores all catalog/book results and undated general territory evidence with classification status. `SearchContext` keeps stable place IDs; props include era selection/area candidates and selection callback. No external geocoding.
 
 ### src/components/map/MapSidebar.tsx
-Collapsible left-side map dock containing Explore, Passage, Journey, Paths, and Library accordions. Explore exposes Bible-book, catalog-coverage, and historical-place-type filters plus the represented/total count; the dock also owns saved-place management, person routes, and the non-blocking territory evidence card.
+Responsive study dock with Historical eras, Explore, Passage, Journey, Paths and Library accordions. Accepts shared era control/panel slots, current selection/status, detail visibility and collapse callback; exposes a phone era chip and keeps one accordion open at a time. Shows passage membership badges and undated-territory return-to-All-eras action.
 
 ### src/components/map/TerritoryEvidenceCard.tsx
-Compact in-sidebar evidence card for a selected historical people or kingdom. Distinguishes source confidence bands, source rough outlines, attested-site lenses, and truly unresolved groups; shows references/source attribution without blocking the map. Exports `TerritoryEvidenceCard`.
+Source-attributed general territory/site/unresolved evidence card. Optional `onReturnToAllEras` displays that the undated outline is hidden in era mode and offers deliberate return to the general catalog.
 
 ### src/components/map/PassageMapPanel.tsx
-Sidebar panel for mapping places in a selected Bible book, chapter, or verse range. Selects a book/chapter/range, validates against `BIBLE_BOOKS`, invokes the local passage query, and lists matched places with their exact verse references inline.
+Passage selector and local-KJV result list with exact references. Accepts era selection and resolved result names; distinguishes curated membership from unclassified passage-study overrides.
 
 ### src/components/map/TravelInsightPanel.tsx
 Sidebar journey-planning panel. Offers searchable From/To selectors across biblical and saved places, then presents direct, overland, and historical-corridor study options with estimated walking days, terrain context, and an explicit uncertainty note inline.
@@ -211,6 +224,16 @@ Simple controlled search input for filtering the Dashboard topic list (no deboun
 
 ## src/data/
 
+### src/data/historicalEraContent.ts
+Typed, additive frozen historical release: 12 eras, 13 snapshots/site contexts, 73 place annotations, scoped names/related identities, 17 itineraries, source registry and exact release manifest. Narrative relevance, not occupation dating. Editorial policy and complete ID table in docs/historical-era-sources.md.
+
+### src/data/generated/historicalBaseMap.json
+Natural Earth v5.1.2 physical FeatureCollection: unchanged global 50m land and selected 10m natural lakes. Dynamic-imported in its own precached map-only chunk; no political lines or modern labels.
+
+### src/data/generated/historicalBaseMap.provenance.json
+Pinned physical asset URLs, source version, license, input SHA-256 hashes and filtering method; regenerated with the basemap script.
+
+
 ### src/data/biblicalAreas.ts
 Static, deliberately approximate historical study-area polygons (Canaan, Egypt/Sinai, Mesopotamia/exile, Roman-era Judea/Galilee/Perea, and Mediterranean churches). Exports `BiblicalArea` and `BIBLICAL_AREAS`; the map shows applicable translucent areas when a Bible book is selected.
 
@@ -224,6 +247,19 @@ Typed adapter over the generated OpenBible snapshot. Exports historical place ki
 Compact generated snapshot of the pinned OpenBible.info Bible Geocoding JSONL revision (CC BY 4.0): 1,335 mappable ancient records from 1,342 source records. Contains stable ids, translation aliases, complete cataloged references, types, primary point/precision, alternate resolutions, and confidence scores; regenerated by `scripts/import-openbible.mjs`.
 
 ## src/hooks/
+
+### src/hooks/useHistoricalEra.ts
+`useHistoricalEra()` returns validated URL/local-preference selection, committed selection, preview/commit, layer state and status announcement. URL wins on history navigation; preserves unrelated parameters and handles unavailable localStorage. Exports URL parse/serialize helpers and versioned preference key.
+
+### src/hooks/useHistoricalEraLayers.ts
+Renders/cleans independent Leaflet area/site and schematic journey groups plus collision-limited persistent names. Requires an explicit ready Map value; no camera fitting, database calls or per-era data fetch.
+
+### src/hooks/useHistoricalBaseMap.ts
+Switches between bundled physical geography and explicit modern OSM tiles. Loads the physical asset once through a lazy import, guards stale async results, retains attribution, and never switches automatically on zoom.
+
+### src/hooks/useMapPaths.ts
+React Query personal map-path CRUD with Supabase API calls and localStorage fallback. Returns paths/loading/error/refetch plus create/update/delete operations; independent of historical era content.
+
 
 ### src/hooks/useConnections.ts
 React Query + Supabase CRUD/subscription hook for `Connection`s scoped to a `topicId`. Real-time handler checks whether the changed connection's `from`/`to` verse belongs to the currently-cached verse set before invalidating (avoids cross-topic invalidation noise). Returns `{ connections, loading, error, createConnection, updateConnection, deleteConnection, refetch }`.
@@ -257,6 +293,16 @@ React Query + Supabase CRUD/subscription hook for `Verse`s scoped to a `topicId`
 
 ## src/lib/
 
+### src/lib/historicalEraTypes.ts
+Historical era/snapshot, structured Scripture reference, annotation/name, GeoJSON area, route/stop/segment, evidence, release-manifest, selection and layer contracts. Dates are qualified verbal metadata in this release.
+
+### src/lib/historicalEraResolver.ts
+Pure, pre-indexed membership and display-name resolution, book/density intersection, deduplicated passage/route/focus overrides, compatible areas/routes and separate counts. Exports ERAS, PLACE_BY_ID, ALL_ERAS, validated selection, annotation/name helpers, labelPlace and resolveHistoricalView.
+
+### src/lib/validateHistoricalEras.ts
+Pure release validator returning actionable errors for IDs, manifest drift, catalog revision, references, evidence, scope/name conflicts, drafts, coordinates, ring closure, route endpoint/geometry consistency and identification links.
+
+
 ### src/lib/bibleApi.ts
 Client-facing Bible-text-fetch API. Spins up a singleton Web Worker (`bibleWorker.ts`) and communicates via `postMessage`/job-id promise map. Exports `fetchKjvVerse(book, chapter, verse)`, `fetchKjvVerseRange(book, chapter, verseStart, verseEnd)`, `fetchKjvBook(book)` (full local book for map coverage), `fetchKjvCustomVerses(book, selections: VerseSelection[])` (the "fancy indexing" entry point), and `VerseSelection` interface.
 
@@ -279,7 +325,7 @@ Pure local search/ranking utility for historical peoples and kingdoms. Exports `
 Color/label constant maps: `EDGE_COLORS`/`EDGE_LABELS` (by `ConnectionType`), `CROSS_TOPIC_COLOR`, `EDGE_STYLE`, `VERSE_TYPE_COLORS`, `ANCHOR_COLOR_PALETTE` (8-color palette for word anchors, distinct from edge colors), `ENTITY_TYPE_COLORS`/`ENTITY_TYPE_ICONS`/`ENTITY_TYPE_LABELS` (by `EntityType`), `ENTITY_RELATION_LABELS` (static map — note: since `EntityRelationType` is now free-form string, this map is only a fallback/legacy set of labels, not exhaustive).
 
 ### src/lib/supabase.ts
-All Supabase client setup + every DB query/mutation/subscription function in the app (topics, verses, connections, topic_links, search, entities, entity_mentions, entity_relationships, timeline_periods, atlas helpers). ~550 lines, organized in commented sections. Real-time subscriptions use `supabase.channel(name-with-random-suffix).on('postgres_changes', ...)`. Also exports `AtlasEntityMention` interface and `getEntityMentionsWithBooks()` (joined query used by `PeopleAtlas` for mention counts).
+All Supabase client setup + every DB query/mutation/subscription function in the app (topics, verses, connections, topic_links, search, entities, entity_mentions, entity_relationships, timeline_periods, atlas helpers). ~550 lines, organized in commented sections. Real-time subscriptions use `supabase.channel(name-with-random-suffix).on('postgres_changes', ...)`. Also exports `TopicCounts`, `getTopicCounts(topicIds)` (batched RPC with legacy fallback), `getMentionsByTopic(topicId)` (500-row pages), and abortable `searchVerses(query, signal?)`. Also exports `AtlasEntityMention` interface and `getEntityMentionsWithBooks()` (joined query used by `PeopleAtlas` for mention counts).
 
 ### src/lib/travelInsights.ts
 Pure geography/study-estimate utility for the map. Exports travel place, route option, and insight types plus haversine distance, terrain-context heuristics, walking-day ranges, and three intentionally approximate direct/overland/corridor options.
@@ -293,7 +339,7 @@ Small helpers: `formatDate()`, `buildAnchorKey(cleanWord, occurrenceIndex)` / `p
 ## src/styles/
 
 ### src/styles/index.css
-Tailwind directives + global resets + React Flow customization + custom animations and node/entity styles. Also owns Leaflet historical-cluster markers, place tooltips, and the accessible co-located-record popup list styling (including dark mode).
+Global Tailwind styles, graph/entity presentation, Leaflet place clusters and evidence tooltips. Also owns responsive era timeline/dock/chip layout, physical-layer labels, focus and reduced-motion styling, and phone map-control spacing.
 
 ## supabase/migrations/
 
@@ -308,6 +354,9 @@ Chronological order (by filename prefix):
 7. `007_period_band_height.sql` — Adds `band_height` (INTEGER, default 300) to `timeline_periods`, for resizable timeline bands.
 7. `007_relationship_sort_order.sql` — Adds `sort_order` (INTEGER, default 0) to `entity_relationships`, for ordering a person's travel route on the Biblical Map. **Shares prefix `007` with the file above** — both are additive/independent (different tables), so apply order between the two doesn't matter, but be aware the numbering collides if a script assumes strict ordering.
 
+8. `008_map_paths.sql` — Saved map paths with ordered JSON points and style metadata.
+9. `009_performance.sql` — Invoker-security batched topic count RPC, trigram indexes for substring search and topic/created-at verse index.
+
 ## Config files
 
 - **package.json** — Vite + React 18 + TypeScript app named `bible-flow`. Key deps include React Flow, Supabase/React Query, React Router, Leaflet, and `html-to-image`. Scripts: `dev`, `build`, `lint`, `preview`, and `data:openbible` (regenerates the versioned historical-place snapshot).
@@ -319,3 +368,15 @@ Chronological order (by filename prefix):
 - **tsconfig.node.json** — Config for Vite config file itself (target ES2022, no path alias needed).
 - **index.html** — Vite entry HTML. PWA meta tags (apple-mobile-web-app-*, theme-color `#4f46e5`), loads `/src/main.tsx` as a module script.
 - **postcss.config.js** — Standard `tailwindcss` + `autoprefixer` plugins.
+
+## Historical era validation and provenance
+
+- **scripts/validate-historical-eras.mjs** — Runs the TypeScript content validator through Vite’s existing SSR loader without opening a server or adding test dependencies.
+- **scripts/test-historical-eras.mjs** — Focused Node assertions for resolver behavior, URL rules, snapshot/name changes, overrides and invalid dataset fixtures; `npm run test:eras`.
+- **scripts/prepare-historical-basemap.mjs** — Reproducible pinned Natural Earth importer; strips properties, selects two natural lake features, preserves geometry and writes SHA-256 provenance.
+- **eslint.config.js** — Minimal ESLint 9 flat configuration for the existing TS/React project and hooks-order checking; generated artifacts excluded.
+- **docs/historical-era-sources.md** — Source-check policy, exact curated place manifest, naming/identity decisions, physical-asset provenance and unresolved content limits.
+- **docs/historical-era-verification.md** — Build/test/browser/cache results, payload changes and remaining validation limits.
+
+- **scripts/test-performance.mjs** — Worker and map regression checks and diagnostic timings against the Git HEAD implementations; run with `node scripts/test-performance.mjs` before committing to compare this pass.
+- **docs/performance-audit.md** — Bottlenecks addressed, measurements, migration deployment and verification limits.

@@ -11,6 +11,9 @@ export interface LocalKjvData {
   verses: LocalKjvVerse[];
 }
 
+const books = new Map<string, LocalKjvVerse[]>();
+const chapters = new Map<string, LocalKjvVerse[]>();
+
 let kjvCache: LocalKjvData | null = null;
 let kjvFetchPromise: Promise<LocalKjvData | null> | null = null;
 
@@ -24,6 +27,14 @@ async function getKjvData(): Promise<LocalKjvData | null> {
         return res.json();
       })
       .then(data => {
+        for (const verse of data.verses as LocalKjvVerse[]) {
+          const book = verse.book_name.toLowerCase();
+          const chapter = `${book}:${verse.chapter}`;
+          if (!books.has(book)) books.set(book, []);
+          if (!chapters.has(chapter)) chapters.set(chapter, []);
+          books.get(book)!.push(verse);
+          chapters.get(chapter)!.push(verse);
+        }
         kjvCache = data;
         return data;
       })
@@ -53,7 +64,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       const bookLower = book.toLowerCase();
       const endV = verseEnd && verseEnd >= verseStart ? verseEnd : verseStart;
 
-      const foundVerses = data.verses.filter(v =>
+      const foundVerses = (chapters.get(`${bookLower}:${chapter}`) ?? []).filter(v =>
         v.book_name.toLowerCase() === bookLower &&
         v.chapter === chapter &&
         v.verse >= verseStart &&
@@ -78,8 +89,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       }
 
       const bookLower = book.toLowerCase();
-      const text = data.verses
-        .filter(verse => verse.book_name.toLowerCase() === bookLower)
+      const text = (books.get(bookLower) ?? [])
         .map(verse => `[${verse.chapter}:${verse.verse}] ${verse.text.replace(/^[¶\s]+/, '').replace(/[‹›]/g, '').trim()}`)
         .join('\n');
       self.postMessage({ jobId, result: text || null });
@@ -98,7 +108,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       const lines: string[] = [];
       for (const sel of selections) {
         const endV = sel.verseEnd >= sel.verseStart ? sel.verseEnd : sel.verseStart;
-        const found = data.verses.filter(
+        const found = (chapters.get(`${bookLower}:${sel.chapter}`) ?? []).filter(
           v =>
             v.book_name.toLowerCase() === bookLower &&
             v.chapter === sel.chapter &&

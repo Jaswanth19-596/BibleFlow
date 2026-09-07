@@ -149,7 +149,6 @@ export default function TimelineBands({ periods, bandWidth, onResizePeriod }: Ti
                 height={12}
                 style={{ pointerEvents: 'all', cursor: 'row-resize', overflow: 'visible' }}
               >
-                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
                 <div
                   onPointerDown={(e) => handleResizePointerDown(e, period.id, bh)}
                   onPointerMove={handleResizePointerMove}

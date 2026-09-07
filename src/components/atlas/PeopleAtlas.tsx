@@ -1,3 +1,4 @@
+import '@xyflow/react/dist/style.css';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   ReactFlow,
@@ -24,7 +25,6 @@ import CreatePeriodModal from './CreatePeriodModal';
 import CreatePersonModal from './CreatePersonModal';
 import EditRelationshipModal from './EditRelationshipModal';
 import { TimelinePeriod, Entity, EntityRelationship } from '@/lib/types';
-import { useDebouncedCallback } from '@/hooks/useDebounce';
 
 const nodeTypes: NodeTypes = { person: PersonNode };
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
@@ -104,6 +104,8 @@ export default function PeopleAtlas() {
   const [pendingRelType, setPendingRelType] = useState('');
   const relInputRef = useRef<HTMLInputElement>(null);
 
+  const peopleById = useMemo(() => new Map(people.map(p => [p.id, p])), [people]);
+
   // Build nodes
   const initialNodes = useMemo(() => {
     return people.map((person) => ({
@@ -132,12 +134,12 @@ export default function PeopleAtlas() {
   const initialEdges: Edge[] = useMemo(() => {
     return relationships
       .filter((r) => {
-        return people.some((p) => p.id === r.from_entity_id) &&
-               people.some((p) => p.id === r.to_entity_id);
+        return peopleById.has(r.from_entity_id) &&
+               peopleById.has(r.to_entity_id);
       })
       .map((r) => {
-        const sourceNode = people.find(p => p.id === r.from_entity_id);
-        const targetNode = people.find(p => p.id === r.to_entity_id);
+        const sourceNode = peopleById.get(r.from_entity_id);
+        const targetNode = peopleById.get(r.to_entity_id);
         
         const sourceY = sourceNode?.atlas_y || 0;
         const targetY = targetNode?.atlas_y || 0;
@@ -207,15 +209,9 @@ export default function PeopleAtlas() {
     }
   }, [pendingConnection]);
 
-  // Debounced position save
-  const debouncedSavePosition = useDebouncedCallback(
-    (id: string, x: number, y: number) => { savePosition(id, x, y); },
-    300
-  );
-
   const onNodeDragStop = useCallback(
     (_: any, node: Node) => {
-      debouncedSavePosition(node.id, node.position.x, node.position.y);
+      savePosition(node.id, node.position.x, node.position.y);
       if (periods.length > 0) {
         const targetPeriod = findPeriodForY(node.position.y, periods);
         if (targetPeriod) {
@@ -226,7 +222,7 @@ export default function PeopleAtlas() {
         }
       }
     },
-    [debouncedSavePosition, periods, people, assignPeriod]
+    [savePosition, periods, people, assignPeriod]
   );
 
   // When user draws a connection between two person nodes

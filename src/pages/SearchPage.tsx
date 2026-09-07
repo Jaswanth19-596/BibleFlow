@@ -16,10 +16,12 @@ export default function SearchPage() {
   const debouncedQuery = useDebounce(query, 300);
 
   useEffect(() => {
+    const controller = new AbortController();
     const doSearch = async () => {
       if (!debouncedQuery.trim()) {
         setResults([]);
         setHasSearched(false);
+        setLoading(false);
         return;
       }
 
@@ -27,17 +29,20 @@ export default function SearchPage() {
       setHasSearched(true);
 
       try {
-        const data = await searchVerses(debouncedQuery.trim());
+        const data = await searchVerses(debouncedQuery.trim(), controller.signal);
+        if (controller.signal.aborted) return;
         setResults(data);
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error('Search failed:', err);
         setResults([]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    doSearch();
+    void doSearch();
+    return () => controller.abort();
   }, [debouncedQuery]);
 
   // Group results by topic

@@ -1,6 +1,7 @@
+import '@xyflow/react/dist/style.css';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { toPng } from 'html-to-image';
+import { ReactFlowProvider } from '@xyflow/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
@@ -19,10 +20,10 @@ import { useTopicLinks } from '@/hooks/useTopicLinks';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useReactFlow } from '@xyflow/react';
 import { Verse, VerseType, ConnectionType, Entity, EntityMentionWithEntity, EntityMentionContext } from '@/lib/types';
-import { getMentionsByVerse, createEntityMention, deleteEntityMention, subscribeToEntityMentions } from '@/lib/supabase';
+import { getMentionsByTopic, createEntityMention, deleteEntityMention, subscribeToEntityMentions } from '@/lib/supabase';
 import { fetchKjvVerseRange } from '@/lib/bibleApi';
 
-export default function TopicGraphView() {
+function TopicGraphView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { screenToFlowPosition } = useReactFlow();
@@ -53,7 +54,7 @@ export default function TopicGraphView() {
   const debouncedSearch = useDebounce(searchInput, 300);
 
   // Get topic links for this topic
-  const thisTopicLinks = topicLinks.filter((l) => l.from_topic_id === id || l.to_topic_id === id);
+  const thisTopicLinks = useMemo(() => topicLinks.filter((l) => l.from_topic_id === id || l.to_topic_id === id), [topicLinks, id]);
 
   // ─── Entity tagging state ────────────────────────────────────────────────────
   const queryClient = useQueryClient();
@@ -66,8 +67,7 @@ export default function TopicGraphView() {
     queryKey: ['entity-mentions-topic', id, verseIds.join(',')],
     queryFn: async () => {
       if (verseIds.length === 0) return [];
-      const results = await Promise.all(verseIds.map((vid) => getMentionsByVerse(vid)));
-      return results.flat();
+      return getMentionsByTopic(id!);
     },
     enabled: verseIds.length > 0,
   });
@@ -260,6 +260,7 @@ export default function TopicGraphView() {
     if (!element) return;
 
     try {
+      const { toPng } = await import('html-to-image');
       const dataUrl = await toPng(element, {
         backgroundColor: '#f9fafb',
         quality: 1,
@@ -569,4 +570,8 @@ function LinkTopicModal({ open, onClose, currentTopicId, topics }: LinkTopicModa
       </form>
     </Modal>
   );
+}
+
+export default function TopicGraphPage() {
+  return <ReactFlowProvider><TopicGraphView /></ReactFlowProvider>;
 }

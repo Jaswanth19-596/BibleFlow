@@ -1,3 +1,5 @@
+import type { EraSelection } from '@/lib/historicalEraTypes';
+import { getEraAnnotation } from '@/lib/historicalEraResolver';
 import { useMemo, useState } from 'react';
 import { BIBLE_BOOKS, getVersesInChapter } from '@/lib/bibleBooks';
 import {
@@ -9,6 +11,7 @@ import {
 } from '@/lib/passagePlaces';
 
 interface PassageMapPanelProps {
+  eraSelection: EraSelection;
   study: PassageStudy | null;
   loading: boolean;
   error: string | null;
@@ -18,7 +21,7 @@ interface PassageMapPanelProps {
 }
 
 export default function PassageMapPanel({
-  study, loading, error, onMapPassage, onClear, onFocusPlace,
+  study, eraSelection, loading, error, onMapPassage, onClear, onFocusPlace,
 }: PassageMapPanelProps) {
   const [book, setBook] = useState('Genesis');
   const [chapter, setChapter] = useState('1');
@@ -154,7 +157,7 @@ export default function PassageMapPanel({
           {study.matches.length ? (
             <div className="mt-2 max-h-52 space-y-1 overflow-y-auto pr-1">
               {study.matches.map(match => {
-                const name = match.place.namesByBook[study.selection.book]?.[0] ?? match.place.name;
+                const name = match.place.name;
                 return (
                   <button
                     key={match.place.id}
@@ -164,6 +167,7 @@ export default function PassageMapPanel({
                     <span className="block text-sm font-semibold text-slate-800 dark:text-white">{name}</span>
                     <span className="block truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
                       {formatPassageVerseLabel(study.selection, match.verses)}
+                      {eraSelection.eraId && <span className="block text-xs">{getEraAnnotation(match.place.id, eraSelection) ? 'Included in this era · passage study' : 'Not classified for this era · passage study override'}</span>}
                     </span>
                   </button>
                 );

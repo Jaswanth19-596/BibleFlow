@@ -33,7 +33,7 @@ export interface HistoricalPlaceIdentification {
 }
 
 export interface BiblicalPlaceCluster {
-  /** Stable OpenBible modern-location id (or a stable coordinate fallback). */
+  /** Stable ancient-record ID: openbible-<ancient-id>; co-located identities remain distinct. */
   id: string;
   openBibleIds: string[];
   primaryIdentificationId: string;

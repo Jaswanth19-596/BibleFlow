@@ -3,6 +3,7 @@ import { HistoricalMapSelection, HistoricalPlaceLens, HistoricalTerritory } from
 interface TerritoryEvidenceCardProps {
   selection: HistoricalMapSelection | null;
   onClear: () => void;
+  onReturnToAllEras?: () => void;
 }
 
 const isMappedTerritory = (selection: HistoricalMapSelection): selection is HistoricalTerritory =>
@@ -11,7 +12,7 @@ const isMappedTerritory = (selection: HistoricalMapSelection): selection is Hist
 const isSiteLens = (selection: HistoricalMapSelection): selection is HistoricalPlaceLens =>
   'sites' in selection;
 
-export default function TerritoryEvidenceCard({ selection, onClear }: TerritoryEvidenceCardProps) {
+export default function TerritoryEvidenceCard({ selection, onClear, onReturnToAllEras }: TerritoryEvidenceCardProps) {
   if (!selection) return null;
 
   const mapped = isMappedTerritory(selection);
@@ -34,6 +35,7 @@ export default function TerritoryEvidenceCard({ selection, onClear }: TerritoryE
             <button onClick={onClear} className="rounded-md px-1.5 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white" aria-label={`Clear ${selection.name}`}>Clear</button>
           </div>
 
+          {onReturnToAllEras && <p className="mt-2 text-xs leading-5 text-amber-800 dark:text-amber-300">No reviewed date for this era; this outline is hidden. <button className="underline" onClick={onReturnToAllEras}>View in All eras</button></p>}
           {mapped ? (
             <>
               <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{selection.confidence === 'source-isobands' ? 'Nested contours show the source’s 10–90% confidence bands. They are historical study areas, not precise or modern borders.' : 'This is a source-provided rough historical study outline, not an exact empire frontier or a modern border.'}</p>

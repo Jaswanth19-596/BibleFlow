@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useTopics } from '@/hooks/useTopics';
-import { getVerseCountByTopic, getConnectionCountByTopic } from '@/lib/supabase';
+import { useQuery } from '@tanstack/react-query';
+import { getTopicCounts } from '@/lib/supabase';
 import TopicSearchBar from '@/components/topics/TopicSearchBar';
 import TopicGrid from '@/components/topics/TopicGrid';
 import NewTopicModal from '@/components/topics/NewTopicModal';
@@ -16,46 +17,21 @@ export default function Dashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
-  const [verseCounts, setVerseCounts] = useState<Record<string, number>>({});
-  const [connectionCounts, setConnectionCounts] = useState<Record<string, number>>({});
-  const [countsLoading, setCountsLoading] = useState(false);
-
-  useEffect(() => {
-    const fetchCounts = async () => {
-      setCountsLoading(true);
-      
-      try {
-        const results = await Promise.all(
-          topics.map(async (topic) => {
-            const [vCount, cCount] = await Promise.all([
-              getVerseCountByTopic(topic.id),
-              getConnectionCountByTopic(topic.id),
-            ]);
-            return { id: topic.id, vCount, cCount };
-          })
-        );
-
-        const verse: Record<string, number> = {};
-        const conn: Record<string, number> = {};
-        
-        results.forEach(({ id, vCount, cCount }) => {
-          verse[id] = vCount;
-          conn[id] = cCount;
-        });
-
-        setVerseCounts(verse);
-        setConnectionCounts(conn);
-      } catch (err) {
-        console.error('Failed to fetch topic counts', err);
-      } finally {
-        setCountsLoading(false);
-      }
-    };
-
-    if (topics.length > 0) {
-      fetchCounts();
+  const topicIds = useMemo(() => topics.map(topic => topic.id).sort(), [topics]);
+  const { data: counts, isLoading: countsLoading } = useQuery({
+    queryKey: ['topic-counts', topicIds],
+    queryFn: () => getTopicCounts(topicIds),
+    enabled: topicIds.length > 0,
+  });
+  const { verseCounts, connectionCounts } = useMemo(() => {
+    const verseCounts: Record<string, number> = {};
+    const connectionCounts: Record<string, number> = {};
+    for (const row of counts ?? []) {
+      verseCounts[row.topic_id] = row.verse_count;
+      connectionCounts[row.topic_id] = row.connection_count;
     }
-  }, [topics]);
+    return { verseCounts, connectionCounts };
+  }, [counts]);
 
   const filteredTopics = useMemo(() => {
     if (!searchQuery.trim()) return topics;
@@ -105,7 +81,7 @@ export default function Dashboard() {
     setSelectedTopic(null);
   };
 
-  const isLoading = loading || countsLoading;
+  const isLoading = loading || (topicIds.length > 0 && countsLoading);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">

@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import type { EraSelection } from '@/lib/historicalEraTypes';
 import { Entity, MapPath } from '@/lib/types';
 import { BIBLE_BOOKS } from '@/lib/bibleBooks';
 import PassageMapPanel from './PassageMapPanel';
@@ -15,12 +16,14 @@ import {
   HistoricalPlaceKind,
 } from '@/data/biblicalPlaces';
 
-type SidebarSection = 'explore' | 'places-in-book' | 'distance' | 'paths' | 'library';
+type SidebarSection = 'era' | 'explore' | 'places-in-book' | 'distance' | 'paths' | 'library';
 
 interface RouteStop { name: string; type: string; order: number; }
 
 interface MapSidebarProps {
   searchSlot?: ReactNode;
+  detailPlaceId: string | null; onReturnToAllEras: () => void;
+  eraLabel: string; eraControl: ReactNode; eraPanel: ReactNode; eraSelection: EraSelection; onCollapsedChange: (collapsed: boolean) => void;
   territorySelection: HistoricalMapSelection | null; onClearTerritory: () => void;
   selectedPersonId: string | null; onSelectPerson: (id: string | null) => void; people: Entity[];
   savedPlaces: Entity[]; selectedSavedPlaceId: string | null; onFocusSavedPlace: (place: Entity) => void; onEditSavedPlace: (place: Entity) => void; onDeleteSavedPlace: (place: Entity) => void; onStartAddingPlace: () => void; isAddingPlace: boolean;
@@ -43,6 +46,8 @@ const SECTIONS: { id: SidebarSection; label: string; iconPath: string }[] = [
 export default function MapSidebar(props: MapSidebarProps) {
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 640);
   const [openSection, setOpenSection] = useState<SidebarSection | null>(null);
+  useEffect(() => props.onCollapsedChange(collapsed), [collapsed, props.onCollapsedChange]);
+  useEffect(() => { if (props.detailPlaceId && window.innerWidth < 640) setCollapsed(true); }, [props.detailPlaceId]);
   const routeStops = props.routeStops ?? [];
   const selectedPerson = props.people.find(person => person.id === props.selectedPersonId);
 
@@ -53,7 +58,9 @@ export default function MapSidebar(props: MapSidebarProps) {
   // ── Collapsed icon rail ──────────────────────────────────────────────
   if (collapsed) {
     return (
-      <aside className="absolute bottom-3 left-3 right-3 z-[1200] flex h-12 items-center justify-between gap-1 rounded-xl border border-slate-200/60 bg-white/90 px-1.5 shadow-lg shadow-black/5 backdrop-blur-xl dark:border-slate-800 dark:bg-[#111716]/95 sm:inset-y-0 sm:right-auto sm:h-auto sm:w-12 sm:flex-col sm:justify-start sm:rounded-none sm:border-y-0 sm:border-l-0 sm:px-0 sm:py-3" aria-label="Map sidebar (collapsed)">
+      <>
+      <button className="era-mobile-chip" onClick={() => { setCollapsed(false); setOpenSection('era'); }}>{props.eraLabel} · Choose era</button>
+      <aside data-map-obstruction="dock" className="absolute bottom-3 left-3 right-3 z-[1200] flex h-12 items-center justify-between gap-1 rounded-xl border border-slate-200/60 bg-white/90 px-1.5 shadow-lg shadow-black/5 backdrop-blur-xl dark:border-slate-800 dark:bg-[#111716]/95 sm:inset-y-0 sm:right-auto sm:h-auto sm:w-12 sm:flex-col sm:justify-start sm:rounded-none sm:border-y-0 sm:border-l-0 sm:px-0 sm:py-3" aria-label="Map sidebar (collapsed)">
         <button onClick={() => setCollapsed(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white sm:mb-2" aria-label="Expand sidebar" title="Expand sidebar">
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
         </button>
@@ -80,12 +87,13 @@ export default function MapSidebar(props: MapSidebarProps) {
           </button>
         ))}
       </aside>
+      </>
     );
   }
 
   // ── Expanded sidebar ─────────────────────────────────────────────────
   return (
-    <aside className="absolute inset-x-0 bottom-0 z-[1200] flex h-[min(74dvh,620px)] w-full flex-col rounded-t-2xl border-t border-slate-200/60 bg-white/95 shadow-xl shadow-black/8 backdrop-blur-xl max-sm:[&_button]:min-h-11 dark:border-slate-800 dark:bg-[#111716]/97 sm:inset-y-0 sm:left-0 sm:right-auto sm:h-auto sm:w-[360px] sm:rounded-none sm:border-r sm:border-t-0" aria-label="Map sidebar">
+    <aside data-map-obstruction="dock" className="absolute inset-x-0 bottom-0 z-[1200] flex h-[min(74dvh,620px)] w-full flex-col rounded-t-2xl border-t border-slate-200/60 bg-white/95 shadow-xl shadow-black/8 backdrop-blur-xl max-sm:[&_button]:min-h-11 dark:border-slate-800 dark:bg-[#111716]/97 sm:inset-y-0 sm:left-0 sm:right-auto sm:h-auto sm:w-[360px] sm:rounded-none sm:border-r sm:border-t-0" aria-label="Map sidebar">
       {/* ── Header ────────────────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         <Link to="/" className="group flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400">
@@ -101,15 +109,19 @@ export default function MapSidebar(props: MapSidebarProps) {
         </div>
       </div>
 
+      <button className="shrink-0 border-b px-4 py-2 text-left text-sm font-semibold text-[#2e6f7e]" onClick={() => toggleSection('era')} aria-expanded={openSection === 'era'}>{props.eraLabel} · Historical eras</button>
       {/* ── Search (always visible) ───────────────────────────────────── */}
       <div className="shrink-0 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         {props.searchSlot}
       </div>
-      <TerritoryEvidenceCard selection={props.territorySelection} onClear={props.onClearTerritory} />
+      <TerritoryEvidenceCard selection={props.territorySelection} onClear={props.onClearTerritory} onReturnToAllEras={props.eraSelection.eraId ? props.onReturnToAllEras : undefined} />
 
       {/* ── Scrollable accordion body ────────────────────────────────── */}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 
+        <AccordionSection id="era" label="Historical eras" iconPath="M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" isOpen={openSection === 'era'} onToggle={() => toggleSection('era')}>
+          <div className="era-dock-control">{props.eraControl}</div>{props.eraPanel}
+        </AccordionSection>
         {/* ── Explore ──────────────────────────────────────────────────── */}
         <AccordionSection id="explore" label="Explore" iconPath={SECTIONS[0].iconPath} isOpen={openSection === 'explore'} onToggle={() => toggleSection('explore')}>
           <div className="space-y-4">
@@ -153,7 +165,7 @@ export default function MapSidebar(props: MapSidebarProps) {
 
         {/* ── All places in a book ───────────────────────────────────────── */}
         <AccordionSection id="places-in-book" label="All places in a book" iconPath={SECTIONS[1].iconPath} isOpen={openSection === 'places-in-book'} onToggle={() => toggleSection('places-in-book')} badge={props.passageStudy ? `${props.passageStudy.matches.length} places` : undefined}>
-          <PassageMapPanel study={props.passageStudy} loading={props.passageLoading} error={props.passageError} onMapPassage={props.onMapPassage} onClear={props.onClearPassage} onFocusPlace={props.onFocusPassagePlace} />
+          <PassageMapPanel eraSelection={props.eraSelection} study={props.passageStudy} loading={props.passageLoading} error={props.passageError} onMapPassage={props.onMapPassage} onClear={props.onClearPassage} onFocusPlace={props.onFocusPassagePlace} />
         </AccordionSection>
 
         {/* ── Distance between two places ───────────────────────────────── */}
@@ -167,7 +179,7 @@ export default function MapSidebar(props: MapSidebarProps) {
             {/* Top Action buttons */}
             <div className="flex items-center gap-2">
               <button
-                onClick={props.onStartDrawingPath}
+                onClick={() => { props.onStartDrawingPath(); if (window.innerWidth < 640) setCollapsed(true); }}
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 px-2.5 text-xs font-bold transition ${
                   props.isDrawingPath
                     ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'

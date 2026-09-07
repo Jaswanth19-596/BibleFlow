@@ -19,7 +19,6 @@ import VerseNode from './VerseNode';
 import ConnectionEdgeComponent from './ConnectionEdge';
 import CrossTopicEdgeComponent from './CrossTopicEdge';
 import { Verse, Connection as ConnType, ConnectionType, TopicLink, Entity, EntityMentionWithEntity } from '@/lib/types';
-import { useDebouncedCallback } from '@/hooks/useDebounce';
 import { ANCHOR_COLOR_PALETTE } from '@/lib/edgeTypes';
 import type { AnchorHighlight } from './VerseNode';
 import { parseAnchorKey } from '@/lib/utils';
@@ -59,6 +58,9 @@ interface VerseFlowCanvasProps {
   onEntityRemove?: (mentionId: string) => void;
   onEntityAddClick?: (verseId: string) => void;
 }
+
+const EMPTY_HIGHLIGHTS: AnchorHighlight[] = [];
+const EMPTY_MENTIONS: EntityMentionWithEntity[] = [];
 
 const nodeTypes: NodeTypes = {
   verse: VerseNode,
@@ -204,7 +206,7 @@ export default function VerseFlowCanvas({
           verse,
           onClick: onVerseClick,
           onDoubleClick: onVerseDoubleClick,
-          connectionHighlights: highlightsMap.get(verse.id) || [],
+          connectionHighlights: highlightsMap.get(verse.id) || EMPTY_HIGHLIGHTS,
           pendingAnchorWord:
             pendingAnchor?.verseId === verse.id ? pendingAnchor.word : null,
           pendingAnchorColor:
@@ -214,7 +216,7 @@ export default function VerseFlowCanvas({
           isSearchMatch: matchIds ? matchIds.has(verse.id) : false,
           isSearchDimmed: matchIds ? !matchIds.has(verse.id) : false,
           // Entity data
-          entityMentions: entityMentionsByVerse?.get(verse.id) || [],
+          entityMentions: entityMentionsByVerse?.get(verse.id) || EMPTY_MENTIONS,
           onEntityClick,
           onEntityRemove,
           onEntityAddClick,
@@ -279,8 +281,7 @@ export default function VerseFlowCanvas({
 
   // Sync nodes when verses / connections / pendingAnchor change
   useEffect(() => {
-    const highlightsMap = buildHighlightsMap(connections);
-    const nextNodes = buildNodes(verses, highlightsMap);
+    const nextNodes = initialNodes;
 
     setNodes((prevNodes) => {
       const prevMap = new Map(prevNodes.map((n) => [n.id, n]));
@@ -305,8 +306,11 @@ export default function VerseFlowCanvas({
         const searchChanged =
           prevData.searchQuery !== nextData.searchQuery ||
           prevData.isSearchMatch !== nextData.isSearchMatch;
-        const mentionsChanged =
-          prevData.entityMentions?.length !== nextData.entityMentions?.length;
+        const mentionsChanged = prevData.entityMentions !== nextData.entityMentions;
+        const anchorChanged = prevData.pendingAnchorWord !== nextData.pendingAnchorWord ||
+          prevData.pendingAnchorColor !== nextData.pendingAnchorColor;
+        const callbacksChanged = ['onClick', 'onDoubleClick', 'onWordClick', 'onEntityClick', 'onEntityRemove', 'onEntityAddClick']
+          .some(key => prevData[key] !== nextData[key]);
 
         // If nothing essential changed, keep the exact same node object reference
         // to prevent React Flow from resetting internal parameters (dragging, sizes, widths).
@@ -318,7 +322,7 @@ export default function VerseFlowCanvas({
           !typeChanged &&
           !highlightsChanged &&
           !searchChanged &&
-          !mentionsChanged
+          !mentionsChanged && !anchorChanged && !callbacksChanged
         ) {
           return prevNode;
         }
@@ -336,28 +340,21 @@ export default function VerseFlowCanvas({
         };
       });
     });
-  }, [verses, connections, buildNodes, setNodes]);
+  }, [initialNodes, setNodes]);
 
   // Sync edges when connections / topicLinks change
   useEffect(() => {
-    setEdges(buildEdges(verses));
-  }, [buildEdges, verses, setEdges]);
+    setEdges(initialEdges);
+  }, [initialEdges, setEdges]);
 
   // ─── Interaction handlers ───────────────────────────────────────────────────
-  const debouncedSavePosition = useDebouncedCallback(
-    (nodeId: string, x: number, y: number) => {
-      onUpdateVersePosition(nodeId, x, y);
-    },
-    500
-  );
-
+  // Drag-stop already limits writes to one per gesture; a shared debounce loses
+  // saves when different nodes are moved in quick succession.
   const onNodeDragStop = useCallback(
-    (_event: any, node: any) => {
-      if (node.position) {
-        debouncedSavePosition(node.id, node.position.x, node.position.y);
-      }
+    (_event: React.MouseEvent, node: Node) => {
+      onUpdateVersePosition(node.id, node.position.x, node.position.y);
     },
-    [debouncedSavePosition]
+    [onUpdateVersePosition]
   );
 
   const onConnect = useCallback(
