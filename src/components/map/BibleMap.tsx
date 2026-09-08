@@ -46,8 +46,25 @@ import { useHistoricalEra } from '@/hooks/useHistoricalEra';
 import { useHistoricalBaseMap } from '@/hooks/useHistoricalBaseMap';
 import { useHistoricalEraLayers } from '@/hooks/useHistoricalEraLayers';
 import { getEraAnnotation, labelPlace, resolveHistoricalView, resolvePlaceLabel } from '@/lib/historicalEraResolver';
-import HistoricalEraControl from './HistoricalEraControl';
-import HistoricalEraPanel from './HistoricalEraPanel';
+
+const HIDDEN_MAP_PATHS_STORAGE_KEY = 'bibleflow_hidden_map_path_ids';
+
+function getHiddenMapPathIds(): Set<string> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HIDDEN_MAP_PATHS_STORAGE_KEY) ?? '[]');
+    return new Set(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveHiddenMapPathIds(pathIds: Set<string>) {
+  try {
+    localStorage.setItem(HIDDEN_MAP_PATHS_STORAGE_KEY, JSON.stringify([...pathIds]));
+  } catch {
+    // Keep route visibility usable when local storage is unavailable.
+  }
+}
 
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
 
@@ -112,12 +129,12 @@ function calculatePointsDistance(points: MapPathPoint[]): number {
 export default function BibleMap() {
   const { entities, createEntity, updateEntity, deleteEntity } = useEntities();
   const { relationships, createRelationship, deleteRelationship } = usePeopleAtlas();
-  const { paths: savedPaths, createPath, updatePath, deletePath } = useMapPaths();
+  const { paths: savedPaths, loading: savedPathsLoading, createPath, updatePath, deletePath } = useMapPaths();
 
   const historical = useHistoricalEra();
   const { selection: eraSelection } = historical;
   const [readyMap, setReadyMap] = useState<L.Map | null>(null);
-  const [basemap, setBasemap] = useState<'physical' | 'modern'>('physical');
+  const [basemap] = useState<'physical' | 'modern'>('physical');
   const [historicalRouteId, setHistoricalRouteId] = useState<string | null>(null);
   const [studyFocusId, setStudyFocusId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 640);
@@ -126,7 +143,7 @@ export default function BibleMap() {
   const passageOperation = useRef(0);
   const snapPlaces = useRef<BiblicalPlaceCluster[]>([]);
   const mapShellRef = useRef<HTMLDivElement>(null);
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [selectedPersonId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [clickCoord, setClickCoord] = useState<{ lat: number; lng: number } | null>(null);
   const [showBiblicalLayer, setShowBiblicalLayer] = useState(true);
@@ -149,6 +166,7 @@ export default function BibleMap() {
   const [selectedTerritory, setSelectedTerritory] = useState<HistoricalMapSelection | null>(null);
 
   // ─── Marked Paths & Routes State ──────────────────────────────────────────
+  const [hiddenPathIds, setHiddenPathIds] = useState<Set<string>>(getHiddenMapPathIds);
   const [activePathIds, setActivePathIds] = useState<Set<string>>(() => new Set());
   const [isDrawingPath, setIsDrawingPath] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState<MapPathPoint[]>([]);
@@ -313,18 +331,18 @@ export default function BibleMap() {
     drawingPointsRef.current = drawingPoints;
   }, [drawingPoints]);
 
-  // Ensure all saved paths are initially active / visible
+  // New routes are visible by default; routes the user hid stay hidden after reload.
   useEffect(() => {
-    if (savedPaths.length > 0) {
-      setActivePathIds(prev => {
-        const next = new Set(prev);
-        savedPaths.forEach(p => {
-          if (!prev.has(p.id)) next.add(p.id);
-        });
-        return next;
-      });
-    }
-  }, [savedPaths]);
+    if (savedPathsLoading) return;
+    const savedPathIds = new Set(savedPaths.map(path => path.id));
+    setHiddenPathIds(previous => {
+      const next = new Set([...previous].filter(id => savedPathIds.has(id)));
+      if (next.size === previous.size) return previous;
+      saveHiddenMapPathIds(next);
+      return next;
+    });
+    setActivePathIds(new Set(savedPaths.filter(path => !hiddenPathIds.has(path.id)).map(path => path.id)));
+  }, [savedPaths, savedPathsLoading, hiddenPathIds]);
 
   // placeId -> Map<personId, relationshipId>
   const placePersonLinks = useMemo(() => {
@@ -561,6 +579,12 @@ export default function BibleMap() {
     setFocusedPath(path);
     if (!activePathIds.has(path.id)) {
       setActivePathIds(prev => new Set([...prev, path.id]));
+      setHiddenPathIds(previous => {
+        const next = new Set(previous);
+        next.delete(path.id);
+        saveHiddenMapPathIds(next);
+        return next;
+      });
     }
     const coords = path.points.map(p => [p.lat, p.lng] as [number, number]);
     if (coords.length === 1) {
@@ -571,9 +595,10 @@ export default function BibleMap() {
   }, [activePathIds]);
 
   const handleTogglePathVisibility = useCallback((pathId: string) => {
+    const isVisible = activePathIds.has(pathId);
     setActivePathIds(prev => {
       const next = new Set(prev);
-      if (next.has(pathId)) {
+      if (isVisible) {
         next.delete(pathId);
         if (focusedPath?.id === pathId) setFocusedPath(null);
       } else {
@@ -581,7 +606,14 @@ export default function BibleMap() {
       }
       return next;
     });
-  }, [focusedPath]);
+    setHiddenPathIds(previous => {
+      const hidden = new Set(previous);
+      if (isVisible) hidden.add(pathId);
+      else hidden.delete(pathId);
+      saveHiddenMapPathIds(hidden);
+      return hidden;
+    });
+  }, [activePathIds, focusedPath]);
 
   const handleStartDrawingPath = () => {
     if (isDrawingPath) {
@@ -1349,31 +1381,17 @@ export default function BibleMap() {
         />
       )}
 
-      <div className="era-desktop-timeline"><HistoricalEraControl selection={eraSelection} onPreview={historical.preview} onCommit={historical.commit} onFit={fitEra} /></div>
       {eraView.era && !representedCount && showBiblicalLayer && sidebarCollapsed && <button className="era-mobile-fit" onClick={fitEra}>No places here · Fit era</button>}
       {historical.status.startsWith('Unknown era') && <p className="absolute right-3 top-3 z-[1190] max-w-72 rounded-lg bg-white p-3 text-xs text-slate-700 shadow">{historical.status}</p>}
       <p className="sr-only" role="status" aria-live="polite">{historical.status}</p>
       {/* Sidebar overlays from the left */}
       <MapSidebar
-        eraLabel={eraView.era?.label ?? 'All eras'}
         onCollapsedChange={setSidebarCollapsed}
         detailPlaceId={selectedBiblicalPlace?.id ?? null}
         onReturnToAllEras={() => historical.commit({ eraId: null, snapshotId: null })}
-        eraControl={<HistoricalEraControl selection={eraSelection} onPreview={historical.preview} onCommit={historical.commit} onFit={fitEra} />}
-        eraPanel={<>
-          <HistoricalEraPanel era={eraView.era} selection={eraSelection} layers={historical.layers} onLayers={historical.setLayers} showPlaces={showBiblicalLayer} onPlaces={() => setShowBiblicalLayer(v => !v)} routeId={historicalRouteId} routes={eraView.availableRoutes} onRoute={setHistoricalRouteId} book={selectedBook} onSnapshot={snapshotId => historical.commit({ ...eraSelection, snapshotId })} onFocus={id => { const p = BIBLICAL_PLACE_CLUSTERS.find(p => p.id === id); if (p) handleFlyTo(p.lat, p.lng, 10, { name: placeLabel(p), source: 'biblical', description: 'Historical journey study stop', placeId: id }); }} />
-          <div className="mt-3 space-y-2 text-xs leading-5"><label className="block">Backdrop<select aria-label="Map backdrop" value={basemap} onChange={e => setBasemap(e.target.value as 'physical' | 'modern')} className="ml-2 rounded border bg-transparent p-2"><option value="physical">Physical geography</option><option value="modern">Modern map</option></select></label><p>{basemap === 'physical' ? 'Natural Earth 5.1.2: schematic modern coastlines, not reconstructed ancient geography. Close-up detail is available in Modern map.' : 'Modern geographic reference. Modern labels and borders remain visible; external tiles are not available reliably offline.'}</p></div>
-          <p className="mt-3 text-xs">{eraView.counts.eligible} eligible catalog records · {eraView.counts.filtered} match filters · {representedCount} represented in this view · {eraView.counts.overrides} study overrides.</p>
-          {(!representedCount || !eraView.counts.filtered) && <div className="mt-3 space-y-2 text-xs"><p>{!showBiblicalLayer ? 'Historical places are hidden.' : 'No ordinary places match the filters or current viewport.'} Book: {selectedBook ?? 'all'}; type: {placeKind}; coverage: {placeCoverage}. Passage and journey overrides remain separate.</p><div className="flex flex-wrap gap-2"><button onClick={() => { setSelectedBook(null); setPlaceKind('all'); setPlaceCoverage('all'); }}>Clear book/type/coverage</button><button onClick={fitEra}>Fit era</button><button onClick={() => historical.commit({ eraId: null, snapshotId: null })}>All eras</button></div></div>}
-          {historical.status && <p className="mt-2 text-xs">{historical.status}</p>}
-          {eraSelection.eraId && selectedTerritory && <p className="mt-2 text-xs">This general territory has no reviewed date for this era. Its evidence remains available; its outline is hidden. <button className="underline" onClick={() => historical.commit({ eraId: null, snapshotId: null })}>Return to All eras</button></p>}
-        </>}
         searchSlot={<MapSearchBar places={places} biblicalPlaces={eraView.searchPlaces} eraSelection={eraSelection} eraAreas={eraView.areas} onSelectEraArea={area => { historical.setLayers(current => ({ ...current, areas: true })); historical.announce(`${area.name}: ${area.uncertainty}`); fitEra(); }} selectedBook={selectedBook} onFlyTo={handleFlyTo} onSelectTerritory={setSelectedTerritory} />}
         territorySelection={selectedTerritory}
         onClearTerritory={() => setSelectedTerritory(null)}
-        selectedPersonId={selectedPersonId}
-        onSelectPerson={setSelectedPersonId}
-        people={people}
         savedPlaces={places}
         selectedSavedPlaceId={selectedSavedPlaceId}
         onFocusSavedPlace={handleFocusSavedPlace}
@@ -1440,11 +1458,6 @@ export default function BibleMap() {
           setSelectedTravelOptionId('overland');
         }}
         onSaveTravelAsPath={handleSaveTravelAsPath}
-        routeStops={selectedPersonRoute.map(r => ({
-          name: r.place.name,
-          type: r.relType,
-          order: r.sortOrder,
-        }))}
       />
 
       {selectedBiblicalPlace && (

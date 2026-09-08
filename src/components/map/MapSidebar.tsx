@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import type { EraSelection } from '@/lib/historicalEraTypes';
 import { Entity, MapPath } from '@/lib/types';
 import { BIBLE_BOOKS } from '@/lib/bibleBooks';
@@ -11,122 +10,72 @@ import TerritoryEvidenceCard from './TerritoryEvidenceCard';
 import { HistoricalMapSelection } from '@/data/biblicalTerritories';
 import {
   HISTORICAL_PLACE_KIND_LABELS,
-  HISTORICAL_PLACE_KINDS,
   HistoricalPlaceCoverage,
   HistoricalPlaceKind,
 } from '@/data/biblicalPlaces';
 
-type SidebarSection = 'era' | 'explore' | 'places-in-book' | 'distance' | 'paths' | 'library';
+type SidebarSection = 'explore' | 'places-in-book' | 'distance' | 'library';
 
-interface RouteStop { name: string; type: string; order: number; }
 
 interface MapSidebarProps {
   searchSlot?: ReactNode;
   detailPlaceId: string | null; onReturnToAllEras: () => void;
-  eraLabel: string; eraControl: ReactNode; eraPanel: ReactNode; eraSelection: EraSelection; onCollapsedChange: (collapsed: boolean) => void;
+  eraSelection: EraSelection; onCollapsedChange: (collapsed: boolean) => void;
   territorySelection: HistoricalMapSelection | null; onClearTerritory: () => void;
-  selectedPersonId: string | null; onSelectPerson: (id: string | null) => void; people: Entity[];
   savedPlaces: Entity[]; selectedSavedPlaceId: string | null; onFocusSavedPlace: (place: Entity) => void; onEditSavedPlace: (place: Entity) => void; onDeleteSavedPlace: (place: Entity) => void; onStartAddingPlace: () => void; isAddingPlace: boolean;
   savedPaths: MapPath[]; activePathIds: Set<string>; onTogglePathVisibility: (id: string) => void; onFocusPath: (path: MapPath) => void; onEditPath: (path: MapPath) => void; onDeletePath: (path: MapPath) => void; onStartDrawingPath: () => void; isDrawingPath: boolean; onOpenCreatePathModal: () => void;
   biblicalPlaceCount: number; totalBiblicalPlaceCount: number; selectedBook: string | null; onSelectBook: (book: string | null) => void; showBiblicalPlaces: boolean; onToggleBiblicalPlaces: () => void;
   placeKind: HistoricalPlaceKind | 'all'; onSelectPlaceKind: (kind: HistoricalPlaceKind | 'all') => void; placeCoverage: HistoricalPlaceCoverage; onSelectPlaceCoverage: (coverage: HistoricalPlaceCoverage) => void;
   passageStudy: PassageStudy | null; passageLoading: boolean; passageError: string | null; onMapPassage: (selection: PassageSelection) => void; onClearPassage: () => void; onFocusPassagePlace: (match: PassagePlaceMatch) => void;
   travelPlaces: TravelPlace[]; travelStart: TravelPlace | null; travelEnd: TravelPlace | null; travelInsight: TravelInsight | null; selectedTravelOptionId: TravelRouteOption['id']; onSelectTravelStart: (place: TravelPlace) => void; onSelectTravelEnd: (place: TravelPlace) => void; onClearTravelStart: () => void; onClearTravelEnd: () => void; onSelectTravelOption: (id: TravelRouteOption['id']) => void; onClearTravelInsight: () => void; onSaveTravelAsPath?: () => void;
-  routeStops?: RouteStop[];
 }
 
-const SECTIONS: { id: SidebarSection; label: string; iconPath: string }[] = [
-  { id: 'explore', label: 'Explore', iconPath: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' },
-  { id: 'places-in-book', label: 'All places in a book', iconPath: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
-  { id: 'distance', label: 'Distance between two places', iconPath: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
-  { id: 'paths', label: 'Marked Paths & Routes', iconPath: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
-  { id: 'library', label: 'Library', iconPath: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4' },
-];
+const DESTINATIONS = [
+  { id: 'explore', label: 'Explore places', short: 'Explore', description: 'Find places and set map filters', icon: '⌖' },
+  { id: 'places-in-book', label: 'Study a passage', short: 'Passage', description: 'See Scripture on the map', icon: '▤' },
+  { id: 'distance', label: 'Journeys', short: 'Journeys', description: 'Measure distance or draw a route', icon: '↗' },
+  { id: 'library', label: 'Your saved items', short: 'Saved', description: 'Revisit your places and routes', icon: '☆' },
+] as const;
 
 export default function MapSidebar(props: MapSidebarProps) {
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 640);
-  const [openSection, setOpenSection] = useState<SidebarSection | null>(null);
+  const [openSection, setOpenSection] = useState<SidebarSection>('explore');
   useEffect(() => props.onCollapsedChange(collapsed), [collapsed, props.onCollapsedChange]);
   useEffect(() => { if (props.detailPlaceId && window.innerWidth < 640) setCollapsed(true); }, [props.detailPlaceId]);
-  const routeStops = props.routeStops ?? [];
-  const selectedPerson = props.people.find(person => person.id === props.selectedPersonId);
 
-  const toggleSection = (id: SidebarSection) => {
-    setOpenSection(current => current === id ? null : id);
-  };
-
-  // ── Collapsed icon rail ──────────────────────────────────────────────
-  if (collapsed) {
-    return (
-      <>
-      <button className="era-mobile-chip" onClick={() => { setCollapsed(false); setOpenSection('era'); }}>{props.eraLabel} · Choose era</button>
-      <aside data-map-obstruction="dock" className="absolute bottom-3 left-3 right-3 z-[1200] flex h-12 items-center justify-between gap-1 rounded-xl border border-slate-200/60 bg-white/90 px-1.5 shadow-lg shadow-black/5 backdrop-blur-xl dark:border-slate-800 dark:bg-[#111716]/95 sm:inset-y-0 sm:right-auto sm:h-auto sm:w-12 sm:flex-col sm:justify-start sm:rounded-none sm:border-y-0 sm:border-l-0 sm:px-0 sm:py-3" aria-label="Map sidebar (collapsed)">
-        <button onClick={() => setCollapsed(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white sm:mb-2" aria-label="Expand sidebar" title="Expand sidebar">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
-        </button>
-
-        <Link to="/" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-indigo-600 transition hover:bg-indigo-50 dark:hover:bg-indigo-950/40 sm:mb-3 sm:h-8 sm:w-8" title="Back to Topics">
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        </Link>
-
-        <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700 sm:my-1 sm:h-px sm:w-6" />
-
-        {SECTIONS.map(section => (
-          <button
-            key={section.id}
-            onClick={() => { setCollapsed(false); setOpenSection(section.id); }}
-            className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${
-              openSection === section.id
-                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white'
-            }`}
-            title={section.label}
-            aria-label={section.label}
-          >
-            <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d={section.iconPath} /></svg>
-          </button>
-        ))}
-      </aside>
-      </>
-    );
-  }
-
-  // ── Expanded sidebar ─────────────────────────────────────────────────
-  return (
-    <aside data-map-obstruction="dock" className="absolute inset-x-0 bottom-0 z-[1200] flex h-[min(74dvh,620px)] w-full flex-col rounded-t-2xl border-t border-slate-200/60 bg-white/95 shadow-xl shadow-black/8 backdrop-blur-xl max-sm:[&_button]:min-h-11 dark:border-slate-800 dark:bg-[#111716]/97 sm:inset-y-0 sm:left-0 sm:right-auto sm:h-auto sm:w-[360px] sm:rounded-none sm:border-r sm:border-t-0" aria-label="Map sidebar">
-      {/* ── Header ────────────────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-        <Link to="/" className="group flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400">
-          <svg className="h-4 w-4 transition group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-          <svg className="h-5 w-5 text-indigo-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          Bible Flow
-        </Link>
-        <div className="flex items-center gap-1">
-          <span className="mr-1 text-[10px] font-medium text-slate-400 dark:text-slate-500">{props.selectedBook ?? `${props.biblicalPlaceCount}/${props.totalBiblicalPlaceCount} places`}</span>
-          <button onClick={() => setCollapsed(true)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Collapse sidebar" title="Collapse sidebar">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M18 19l-7-7 7-7" /></svg>
-          </button>
+  const [savedTab, setSavedTab] = useState<'places' | 'routes'>('places');
+  const current = DESTINATIONS.find(item => item.id === openSection) ?? DESTINATIONS[0];
+  const filters = [
+    ...(props.selectedBook ? [{ label: props.selectedBook, clear: () => props.onSelectBook(null) }] : []),
+    ...(props.placeKind !== 'all' ? [{ label: HISTORICAL_PLACE_KIND_LABELS[props.placeKind], clear: () => props.onSelectPlaceKind('all') }] : []),
+    ...(props.placeCoverage !== 'all' ? [{ label: props.placeCoverage === 'major' ? 'Major only' : 'Major + regional', clear: () => props.onSelectPlaceCoverage('all') }] : []),
+  ];
+  const navigation = <nav className="study-navigation" aria-label="Map workspaces">
+    {DESTINATIONS.map(item => <button key={item.id} aria-pressed={openSection === item.id && !collapsed} onClick={() => { setOpenSection(item.id); setCollapsed(false); }}>
+      <span aria-hidden="true" className="study-nav-icon">{item.icon}</span>
+      <span className="study-nav-label">{item.label}<small>{item.description}</small></span>
+      <span className="study-nav-short">{item.short}</span>
+    </button>)}
+  </nav>;
+  return <>
+    <aside data-map-obstruction="dock" className={`study-dock ${collapsed ? 'is-collapsed' : ''}`} aria-label="Bible map tools">
+      {!collapsed && <>
+        <div className="study-dock-heading"><div><strong>Bible map</strong><span>Explore the world of Scripture</span></div><button onClick={() => setCollapsed(true)} aria-label="Collapse sidebar">Hide</button></div>
+        <div className="study-context">
+          {props.searchSlot}
+          {filters.length > 0 && <div className="study-filter-chips">{filters.map(filter => <button key={filter.label} onClick={filter.clear} aria-label={`Remove ${filter.label} filter`}>{filter.label} ×</button>)}<button onClick={() => filters.forEach(filter => filter.clear())}>Reset filters</button></div>}
         </div>
-      </div>
-
-      <button className="shrink-0 border-b px-4 py-2 text-left text-sm font-semibold text-[#2e6f7e]" onClick={() => toggleSection('era')} aria-expanded={openSection === 'era'}>{props.eraLabel} · Historical eras</button>
-      {/* ── Search (always visible) ───────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-        {props.searchSlot}
-      </div>
-      <TerritoryEvidenceCard selection={props.territorySelection} onClear={props.onClearTerritory} onReturnToAllEras={props.eraSelection.eraId ? props.onReturnToAllEras : undefined} />
-
-      {/* ── Scrollable accordion body ────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-
-        <AccordionSection id="era" label="Historical eras" iconPath="M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" isOpen={openSection === 'era'} onToggle={() => toggleSection('era')}>
-          <div className="era-dock-control">{props.eraControl}</div>{props.eraPanel}
-        </AccordionSection>
+      </>}
+      {navigation}
+      {!collapsed && <div className="study-workspace">
+        <TerritoryEvidenceCard selection={props.territorySelection} onClear={props.onClearTerritory} onReturnToAllEras={props.eraSelection.eraId ? props.onReturnToAllEras : undefined} />
+        <div className="study-workspace-title"><h2>{current.label}</h2><p>{current.description}</p></div>
+        {openSection === 'library' && <div className="study-saved-tabs" aria-label="Saved item type"><button aria-pressed={savedTab === 'places'} onClick={() => setSavedTab('places')}>Places ({props.savedPlaces.length})</button><button aria-pressed={savedTab === 'routes'} onClick={() => setSavedTab('routes')}>Routes ({props.savedPaths.length})</button></div>}
         {/* ── Explore ──────────────────────────────────────────────────── */}
-        <AccordionSection id="explore" label="Explore" iconPath={SECTIONS[0].iconPath} isOpen={openSection === 'explore'} onToggle={() => toggleSection('explore')}>
+        {openSection === 'explore' && <section>
           <div className="space-y-4">
             <label className="block">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Reading in</span>
+              <span className="mb-1 block text-[10px] font-semibold text-slate-500">Reading in</span>
               <select value={props.selectedBook ?? ''} onChange={e => props.onSelectBook(e.target.value || null)} className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Filter map by Bible book">
                 <option value="">All books</option>
                 <optgroup label="Old Testament">{BIBLE_BOOKS.filter(b => b.testament === 'OT').map(b => <option key={b.name} value={b.name}>{b.name}</option>)}</optgroup>
@@ -134,25 +83,7 @@ export default function MapSidebar(props: MapSidebarProps) {
               </select>
             </label>
 
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Coverage</span>
-                <select value={props.placeCoverage} onChange={event => props.onSelectPlaceCoverage(event.target.value as HistoricalPlaceCoverage)} className="block w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-amber-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Filter places by catalog importance">
-                  <option value="all">Every place</option>
-                  <option value="major-regional">Major + regional</option>
-                  <option value="major">Major only</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Place type</span>
-                <select value={props.placeKind} onChange={event => props.onSelectPlaceKind(event.target.value as HistoricalPlaceKind | 'all')} className="block w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-amber-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white" aria-label="Filter places by historical place type">
-                  <option value="all">All types</option>
-                  {HISTORICAL_PLACE_KINDS.map(kind => <option key={kind} value={kind}>{HISTORICAL_PLACE_KIND_LABELS[kind]}</option>)}
-                </select>
-              </label>
-            </div>
-
-            <button onClick={props.onToggleBiblicalPlaces} className="flex w-full items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600">
+            <button role="switch" aria-checked={props.showBiblicalPlaces} onClick={props.onToggleBiblicalPlaces} className="flex w-full items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600">
               <span className={`h-2.5 w-2.5 rounded-full transition ${props.showBiblicalPlaces ? 'bg-slate-900 dark:bg-slate-100' : 'bg-slate-300 dark:bg-slate-600'}`} />
               <span className="text-left text-slate-700 dark:text-slate-200">{props.showBiblicalPlaces ? `${props.biblicalPlaceCount} places represented` : 'Historical places hidden'}</span>
             </button>
@@ -161,22 +92,15 @@ export default function MapSidebar(props: MapSidebarProps) {
               Nearby records consolidate into numbered clusters. Zoom in to separate them; exact shared sites remain grouped so no record is buried beneath another.
             </div>
           </div>
-        </AccordionSection>
+        </section>}
 
         {/* ── All places in a book ───────────────────────────────────────── */}
-        <AccordionSection id="places-in-book" label="All places in a book" iconPath={SECTIONS[1].iconPath} isOpen={openSection === 'places-in-book'} onToggle={() => toggleSection('places-in-book')} badge={props.passageStudy ? `${props.passageStudy.matches.length} places` : undefined}>
+        {openSection === 'places-in-book' && <section>
           <PassageMapPanel eraSelection={props.eraSelection} study={props.passageStudy} loading={props.passageLoading} error={props.passageError} onMapPassage={props.onMapPassage} onClear={props.onClearPassage} onFocusPlace={props.onFocusPassagePlace} />
-        </AccordionSection>
+        </section>}
 
         {/* ── Distance between two places ───────────────────────────────── */}
-        <AccordionSection id="distance" label="Distance between two places" iconPath={SECTIONS[2].iconPath} isOpen={openSection === 'distance'} onToggle={() => toggleSection('distance')} badge={props.travelInsight ? `${Math.round(props.travelInsight.directDistanceKm)} km` : undefined}>
-          <TravelInsightPanel places={props.travelPlaces} start={props.travelStart} end={props.travelEnd} insight={props.travelInsight} selectedOptionId={props.selectedTravelOptionId} onSelectStart={props.onSelectTravelStart} onSelectEnd={props.onSelectTravelEnd} onClearStart={props.onClearTravelStart} onClearEnd={props.onClearTravelEnd} onSelectOption={props.onSelectTravelOption} onClear={props.onClearTravelInsight} onSaveAsPath={props.onSaveTravelAsPath} />
-        </AccordionSection>
-
-        {/* ── Marked Paths & Routes ────────────────────────────────────── */}
-        <AccordionSection id="paths" label="Marked Paths & Routes" iconPath={SECTIONS[3].iconPath} isOpen={openSection === 'paths'} onToggle={() => toggleSection('paths')} badge={props.savedPaths.length ? `${props.savedPaths.length}` : undefined}>
-          <div className="space-y-4">
-            {/* Top Action buttons */}
+        {openSection === 'distance' && <section>            {/* Top Action buttons */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => { props.onStartDrawingPath(); if (window.innerWidth < 640) setCollapsed(true); }}
@@ -189,7 +113,7 @@ export default function MapSidebar(props: MapSidebarProps) {
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
-                {props.isDrawingPath ? '✕ Cancel Drawing' : 'Draw on Map'}
+                {props.isDrawingPath ? '✕ Cancel Drawing' : 'Draw route'}
               </button>
 
               <button
@@ -199,7 +123,7 @@ export default function MapSidebar(props: MapSidebarProps) {
                 <svg className="h-3.5 w-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
-                New Route
+                Create route
               </button>
             </div>
 
@@ -209,6 +133,13 @@ export default function MapSidebar(props: MapSidebarProps) {
               </p>
             )}
 
+<h3 className="study-subheading">Measure distance</h3>
+          <TravelInsightPanel places={props.travelPlaces} start={props.travelStart} end={props.travelEnd} insight={props.travelInsight} selectedOptionId={props.selectedTravelOptionId} onSelectStart={props.onSelectTravelStart} onSelectEnd={props.onSelectTravelEnd} onClearStart={props.onClearTravelStart} onClearEnd={props.onClearTravelEnd} onSelectOption={props.onSelectTravelOption} onClear={props.onClearTravelInsight} onSaveAsPath={props.onSaveTravelAsPath} />
+        </section>}
+
+        {/* ── Marked Paths & Routes ────────────────────────────────────── */}
+        {openSection === 'library' && savedTab === 'routes' && <section>
+          <div className="space-y-4">
             {/* Saved Paths List */}
             {props.savedPaths.length > 0 ? (
               <div className="space-y-1.5">
@@ -288,7 +219,7 @@ export default function MapSidebar(props: MapSidebarProps) {
                       </button>
 
                       {/* Action buttons (Edit & Delete) */}
-                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-100">
                         <button
                           onClick={() => props.onEditPath(path)}
                           aria-label={`Edit ${path.name}`}
@@ -312,23 +243,23 @@ export default function MapSidebar(props: MapSidebarProps) {
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center dark:border-slate-700">
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">No paths saved yet</p>
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">No routes saved yet</p>
                 <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500 leading-4">
-                  Draw custom journeys on the map or measure distances to save labeled study routes.
+                  Open Journeys to draw a route or save a measured journey.
                 </p>
               </div>
             )}
           </div>
-        </AccordionSection>
+        </section>}
 
         {/* ── Library ──────────────────────────────────────────────────── */}
-        <AccordionSection id="library" label="Library" iconPath={SECTIONS[4].iconPath} isOpen={openSection === 'library'} onToggle={() => toggleSection('library')} badge={props.savedPlaces.length ? `${props.savedPlaces.length}` : undefined}>
+        {openSection === 'library' && savedTab === 'places' && <section>
           <div className="space-y-5">
             {/* Saved Places */}
             <div>
               <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Saved places</p>
-                <button onClick={props.onStartAddingPlace} className={`rounded-md px-2.5 py-1.5 text-[11px] font-bold transition ${props.isAddingPlace ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300'}`}>
+                <p className="text-[10px] font-semibold text-slate-500">Saved places</p>
+                <button onClick={() => { props.onStartAddingPlace(); if (window.innerWidth < 640) setCollapsed(true); }} className={`rounded-md px-2.5 py-1.5 text-[11px] font-bold transition ${props.isAddingPlace ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300'}`}>
                   {props.isAddingPlace ? '✕ Cancel placement' : '+ Add place'}
                 </button>
               </div>
@@ -345,7 +276,7 @@ export default function MapSidebar(props: MapSidebarProps) {
                         <span className="block truncate text-sm font-semibold text-slate-800 dark:text-white">{place.name}</span>
                         <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">{place.description || 'Saved study place'}</span>
                       </button>
-                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-100">
                         <button onClick={() => props.onEditSavedPlace(place)} aria-label={`Edit ${place.name}`} className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white" title="Edit">✎</button>
                         <button onClick={() => props.onDeleteSavedPlace(place)} aria-label={`Delete ${place.name}`} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400" title="Delete">×</button>
                       </div>
@@ -357,72 +288,9 @@ export default function MapSidebar(props: MapSidebarProps) {
               )}
             </div>
 
-            {/* Divider */}
-            <div className="h-px bg-slate-200 dark:bg-slate-700" />
-
-            {/* People Routes */}
-            <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">People routes</p>
-              <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => props.onSelectPerson(null)} className={`rounded-full px-2.5 py-1.5 text-xs font-semibold transition ${props.selectedPersonId === null ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/15'}`}>
-                  All places
-                </button>
-                {props.people.map(person => (
-                  <button key={person.id} onClick={() => props.onSelectPerson(person.id)} className={`rounded-full px-2.5 py-1.5 text-xs font-semibold transition ${props.selectedPersonId === person.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/15'}`}>
-                    {person.name}
-                  </button>
-                ))}
-              </div>
-              {selectedPerson && routeStops.length > 0 && (
-                <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-600 dark:bg-white/5 dark:text-slate-400">
-                  <span className="font-semibold">{selectedPerson.name}:</span>{' '}
-                  {routeStops.map(stop => stop.name).join(' → ')}
-                </p>
-              )}
-            </div>
           </div>
-        </AccordionSection>
-      </div>
+        </section>}
+      </div>}
     </aside>
-  );
-}
-
-// ─── Accordion Section ─────────────────────────────────────────────────────
-interface AccordionSectionProps {
-  id: string;
-  label: string;
-  iconPath: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  badge?: string;
-  children: ReactNode;
-}
-
-function AccordionSection({ id, label, iconPath, isOpen, onToggle, badge, children }: AccordionSectionProps) {
-  return (
-    <section className="border-b border-slate-100 dark:border-slate-800" aria-labelledby={`section-${id}`}>
-      <button
-        id={`section-${id}`}
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${isOpen ? 'bg-slate-50 dark:bg-white/5' : 'hover:bg-slate-50 dark:hover:bg-white/5'}`}
-      >
-        <svg className={`h-[18px] w-[18px] shrink-0 transition ${isOpen ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d={iconPath} />
-        </svg>
-        <span className={`flex-1 text-sm font-semibold transition ${isOpen ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>{label}</span>
-        {badge && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">{badge}</span>
-        )}
-        <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {isOpen && (
-        <div className="px-4 pb-4 pt-1 animate-in fade-in slide-in-from-top-1 duration-200">
-          {children}
-        </div>
-      )}
-    </section>
-  );
+  </>;
 }

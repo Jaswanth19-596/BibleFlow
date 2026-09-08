@@ -161,18 +161,15 @@ Add/Edit verse form with two modes: **Standard Range** (book/chapter/verse_start
 Top-level layout: `Header` + main content area + optional slide-in `Sidebar` (controlled via `showSidebar`/`sidebarContent`/`onCloseSidebar` props — currently unused by any page, all pages render their own overlays instead).
 
 ### src/components/layout/Header.tsx
-Top nav bar. Nav items: Topics (`/`), Network (`/topics/network`), People (`/atlas`), Map (`/map`), Search (`/search`). **No Entities nav link.** Shows offline badge (`usePWA().isOffline`) and Install button (`usePWA().canInstall`).
+Persistent top nav bar, including on the map. Nav items: My topics (`/`), Connections (`/topics/network`), People (`/atlas`), Bible map (`/map`), Search (`/search`). **No Entities nav link.** Shows offline badge (`usePWA().isOffline`) and Install button (`usePWA().canInstall`).
 
 ### src/components/layout/Sidebar.tsx
 Generic slide-in right sidebar shell (close button + scrollable content area). Used via `AppShell`'s `sidebarContent` prop (currently unused elsewhere).
 
 ## src/components/map/
 
-### src/components/map/HistoricalEraControl.tsx
-Accessible native category slider, direct dropdown, previous/next, snapshot caption, All eras and Fit era. Shares selection callbacks between desktop and mobile; RAF preview, single history commit per pointer gesture, keyboard and cancel handling.
-
 ### src/components/map/HistoricalEraPanel.tsx
-Era summary, snapshot/layer choices, sourced ordered itineraries with unmapped gaps, uncertainty and coverage explanation. Exports default panel and reusable `EvidenceLinks({ ids })`.
+Legacy era panel (no longer mounted in the map sidebar). Exports default panel and reusable `EvidenceLinks({ ids })`, still used by HistoricalPlaceDetails.
 
 ### src/components/map/CreatePathModal.tsx
 Personal path creation/editing from existing places or a drawn draft. Accepts path/point defaults and era-resolved available-place labels, preserves previously saved point names, supports reorder/style/color and distance calculation.
@@ -182,7 +179,7 @@ Personal drawing status and Undo/Finish/Cancel controls driven by point count an
 
 
 ### src/components/map/BibleMap.tsx
-Main Leaflet map (route `/map`). Composes shared era resolution with book/density filters, passage/route/focus overrides, measured camera fitting, accessible clustered pins, source evidence, saved places/paths, person routes, drawing and study travel estimates. Invalidates stale passage/search operations; era changes preserve personal work and camera position. Uses independent physical-base, era-context, journey and name layers.
+Main Leaflet map (route `/map`). Composes shared era resolution with book/density filters, passage/route/focus overrides, measured camera fitting, accessible clustered pins, source evidence, saved places/paths, person routes, drawing and study travel estimates. Hidden personal-route IDs persist in localStorage, so route visibility survives reloads; new routes default to visible. Invalidates stale passage/search operations; era changes preserve personal work and camera position. Uses independent physical-base, era-context, journey and name layers.
 
 ### src/components/map/CreatePlaceModal.tsx
 Custom fixed-overlay modal (name + description) for either naming a newly placed location or editing an existing saved place. Not built on the shared `Modal` component.
@@ -194,7 +191,7 @@ Evidence-forward selected catalog record. Receives resolved display name, era/sn
 Searches resolved catalog labels/aliases/references and saved places within the current era/book, plus compatible era context layers. Explicit broader search restores all catalog/book results and undated general territory evidence with classification status. `SearchContext` keeps stable place IDs; props include era selection/area candidates and selection callback. No external geocoding.
 
 ### src/components/map/MapSidebar.tsx
-Responsive study dock with Historical eras, Explore, Passage, Journey, Paths and Library accordions. Accepts shared era control/panel slots, current selection/status, detail visibility and collapse callback; exposes a phone era chip and keeps one accordion open at a time. Shows passage membership badges and undated-territory return-to-All-eras action.
+Responsive labeled workspaces: Explore places, Study a passage, Journeys, and Your saved items (Places/Routes). Persistent search, removable book/type/coverage filters, and labeled phone bottom navigation; coverage/type filter selectors are removed. Accepts current selection/status, detail visibility and collapse callback. Journey tools group route drawing/creation and distance measurement; saved-item actions stay visible for touch/keyboard.
 
 ### src/components/map/TerritoryEvidenceCard.tsx
 Source-attributed general territory/site/unresolved evidence card. Optional `onReturnToAllEras` displays that the undated outline is hidden in era mode and offers deliberate return to the general catalog.

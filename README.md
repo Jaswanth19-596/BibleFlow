@@ -35,10 +35,10 @@ Create meaningful relationships between verses with typed connections:
 - **Link Creation UI**: Drag between topic nodes to create new relationships
 
 ### Biblical Map
-- **Historical eras**: Twelve discrete study periods, named snapshots, scoped place names and seventeen separate narrative itineraries. Use the timeline or phone dock to choose an era; Fit era moves the camera explicitly. Share era/snapshot selections through the URL.
+- **Historical eras**: Twelve discrete study periods, named snapshots, scoped place names and seventeen separate narrative itineraries. The era selector UI has been removed; existing era links still resolve historical context. Fit era moves the camera explicitly. Share era/snapshot selections through the URL.
 - **Evidence and study overrides**: Curated era membership intersects with book/type/coverage filters. Passage results, selected route stops and explicit broader-search pins remain labeled study overrides. Unclassified does not mean historically absent. Saved/drafted personal work stays independent.
 - **Physical backdrop**: Bundled Natural Earth land, Sea of Galilee and northern Dead Sea without modern political labels, plus an explicit Modern map option. Site halos indicate narrative context, and dashed journey lines indicate schematic sequence; neither claims precise historical boundaries or roads.
-- **Focused study dock**: A collapsible left-side dock keeps Explore, Passage, Journey, and Library controls available without covering the map with modals
+- **Focused study dock**: A collapsible dock groups Explore places, Study a passage, Journeys, and Your saved items, with labeled phone navigation, persistent search, and removable filters
 - **Complete historical-place catalog**: Browse 1,335 mappable ancient-place records generated from the pinned OpenBible Bible Geocoding dataset (1,342 source records), with stable source ids, complete cataloged verse references, translation names, and place types
 - **No hidden catalog tiers**: Every record matching the active filters is represented at every zoom. Screen-space clustering keeps the map readable, and exact shared sites remain grouped into a selectable record list instead of burying overlapping pins
 - **Historical-place filters**: Narrow the map by Bible book, coverage (every, major/regional, or major only), and place type such as settlement, region, landform, water feature, structure, route, or campsite
@@ -49,7 +49,7 @@ Create meaningful relationships between verses with typed connections:
 - **Gentle geographic context**: Approximate historical study areas provide context without covering or intercepting the map; biblical locations remain small, clickable pins
 - **Reliable place search**: Search canonical names, alternate biblical names, or cited references; map search never falls back to modern street addresses
 - **Historical peoples and kingdoms**: Search source-backed groups such as Canaanites, Philistines, Moabites, Assyrians, or the Hittite kingdom to see qualified historical areas, biblical references, and data attribution. Hivites and Amorites use named site lenses where that is the more honest evidence; Perizzites and Girgashites remain clear research notes instead of invented borders
-- **Personal study routes**: Save study locations, link them to people, and follow their ordered travel route
+- **Personal study routes**: Save and follow ordered study routes; hidden routes stay hidden after a reload on the same browser
 - **Saved-place management**: Add a place only when you enter placement mode, then focus, edit, or remove any saved place from the map sidebar
 
 ### Bible Integration
