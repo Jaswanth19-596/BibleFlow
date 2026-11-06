@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Atlas disposable preview</title></head><body><div id="root"></div>
+<script type="module">
+// In-memory browser fixture: never sends application reads/writes to Supabase.
+import { BUILTIN_DEFINITIONS } from '/src/lib/relationships.ts';
+const failSave = new URLSearchParams(location.search).has('failSave');
+const id = n => `00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+const entity = (n,name,x,y,description='',type='person',metadata={}) => ({id:id(n),name,type,metadata,description,color:'#5967c2',timeline_period_id:null,atlas_x:x,atlas_y:y,created_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+const entities=[entity(1,'Saul',80,60),entity(2,'Rizpah',530,60),entity(3,'Armoni',100,350),entity(4,'Mephibosheth',500,350),entity(5,'Israel',880,70,'A nation','nation'),entity(6,'Zechariah',900,340,'','person',{qualifier:'the priest',aliases:['Zacharias']}),entity(7,'Zechariah',900,520,'','person',{qualifier:'the prophet'})];
+const relation=(n,from,to,type,metadata={})=>({id:id(n),from_entity_id:id(from),to_entity_id:id(to),type,description:'',metadata,definition_id:BUILTIN_DEFINITIONS.find(d=>d.label===type)?.id,evidence:[],created_at:new Date().toISOString()});
+const meta={status:'explicit',lineage_scope:'direct',parentage:'unspecified'};
+const relationships=[relation(101,1,3,'parent of',meta),relation(102,2,3,'parent of',meta),relation(103,1,4,'parent of',meta),relation(104,2,4,'parent of',meta),relation(105,2,1,'concubine of'),relation(106,1,5,'king of'),relation(107,6,5,'priest of'),relation(108,7,5,'prophet to')];
+relationships[4].evidence=[{id:id(201),book:'2 Samuel',chapter:21,verse_start:8,verse_end:null,note:'Example reference'}];
+const definitions=[...BUILTIN_DEFINITIONS];
+const response=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
+window.fetch=async(input,options={})=>{
+  const url=new URL(typeof input==='string'?input:input.url);
+  if(!url.pathname.startsWith('/rest/v1/')) throw new Error('Fixture blocked unexpected network request');
+  const table=url.pathname.split('/').pop();const method=options.method??'GET';
+  if(method==='GET') {
+    let rows=table==='entities'?entities:table==='entity_relationships'?relationships:table==='relationship_definitions'?definitions:table==='relationship_evidence'?relationships.flatMap(r=>r.evidence.map(e=>({...e,relationship_id:r.id}))):[];
+    const range=(options.headers?.Range??options.headers?.range??'').split('-').map(Number);
+    if(range.length===2) rows=rows.slice(range[0],range[1]+1);
+    return response(rows);
+  }
+  if(failSave) return response({message:'Preview: simulated connection failure. Your input is preserved.',code:'PREVIEW'},503);
+  const body=JSON.parse(options.body??'{}');
+  if(table==='atlas_save_relationship') {
+    const draft=body.p_draft;let definition=definitions.find(d=>d.label.toLowerCase()===draft.type.toLowerCase());
+    if(!definition){definition={id:`custom:${draft.type.toLowerCase()}`,label:draft.type,category:draft.category,symmetric:draft.symmetric,inverse_label:null,parent_direction:null};definitions.push(definition);}
+    const row={...draft,id:draft.id??crypto.randomUUID(),definition_id:definition.id,created_at:new Date().toISOString()};
+    const index=relationships.findIndex(r=>r.id===row.id);if(index<0)relationships.push(row);else relationships[index]=row;
+    return response(row.id);
+  }
+  if(table==='atlas_set_parents') {
+    for(const parent of body.p_parents){let row=relationships.find(r=>r.from_entity_id===parent&&r.to_entity_id===body.p_child&&r.definition_id==='parent-of');if(!row){row={...relation(999,1,3,'parent of'),id:crypto.randomUUID(),from_entity_id:parent,to_entity_id:body.p_child};relationships.push(row);}row.metadata={status:'explicit',lineage_scope:'direct',parentage:body.p_parentage,period_id:body.p_period};}
+    return response(null);
+  }
+  if(table==='entity_relationships'&&method==='DELETE'){const key=url.searchParams.get('id')?.slice(3);const i=relationships.findIndex(r=>r.id===key);if(i>=0)relationships.splice(i,1);return new Response(null,{status:204});}
+  if(table==='entities') {
+    if(method==='POST'){const row={...body,id:crypto.randomUUID(),created_at:new Date().toISOString(),updated_at:new Date().toISOString()};entities.push(row);return response(row,201);}
+    const key=url.searchParams.get('id')?.slice(3);const row=entities.find(e=>e.id===key);if(row){Object.assign(row,body);return response(row);}
+  }
+  return response({message:'Unsupported preview operation'},400);
+};
+// The fixture does not need realtime transport; query invalidation exercises refreshes.
+window.WebSocket=class {static OPEN=1;static CLOSED=3;readyState=3;addEventListener(){}removeEventListener(){}send(){}close(){} };
+history.replaceState(null,'','/atlas'+location.search);
+await import('/src/main.tsx');
+</script></body></html>

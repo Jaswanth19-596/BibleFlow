@@ -11,7 +11,9 @@
     "data:openbible": "node scripts/import-openbible.mjs",
     "test:eras": "node scripts/test-historical-eras.mjs",
     "data:validate-eras": "node scripts/validate-historical-eras.mjs",
-    "data:basemap": "node scripts/prepare-historical-basemap.mjs"
+    "data:basemap": "node scripts/prepare-historical-basemap.mjs",
+    "test:relationships": "node scripts/test-relationships.mjs",
+    "test:relationships:database": "node scripts/test-relationship-database.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

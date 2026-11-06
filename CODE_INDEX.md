@@ -15,7 +15,6 @@ Auto-navigation index. See `KNOWLEDGE_GRAPH.md` for architecture/data-model narr
 ## Known inconsistencies (as of last index update)
 
 - `EntityExplorerPage.tsx` (`src/pages/`) is **not routed** in `App.tsx` and has no nav link in `Header.tsx`. The `/entities` route does not exist despite the page being fully built. Confirm before assuming it's reachable.
-- `src/components/atlas/CreateRelationshipModal.tsx` is **not imported anywhere** (`PeopleAtlas.tsx` uses an inline pending-connection prompt instead, plus `EditRelationshipModal` for edits). Likely dead code — verify with a fresh grep before relying on or deleting it.
 - Two migrations are both numbered `007_*` (`007_period_band_height.sql`, `007_relationship_sort_order.sql`) — they don't conflict (different tables/columns) but confirm apply order in Supabase if it ever matters.
 
 ## Quick task → file map
@@ -77,29 +76,41 @@ Topic network graph page (route `/topics/network`). Self-contained React Flow in
 
 ## src/components/atlas/
 
+### src/components/atlas/AtlasSearch.tsx
+Accessible debounced-search result UI with keyboard selection, typed result rows, loading/empty states, clear and Show more. Receives the query/results and explicit selection callback.
+
 ### src/components/atlas/CreatePeriodModal.tsx
 Modal for creating/editing a `TimelinePeriod`. Handles insert-at-position (beginning/after-X/end) on create, and Move Up/Down reordering on edit — both via the `onReorder` batch-update callback. Includes delete.
 
 ### src/components/atlas/CreatePersonModal.tsx
-Simple modal for creating/editing a person `Entity` (name + description only; color defaults to `ENTITY_TYPE_COLORS.person`).
+Async create/edit entity dialog for every EntityType plus group/institution/divine subtypes in metadata. Exports `AtlasEntityInput`; supports qualifiers, aliases, deliberate same-name identities and retained input on save failure.
 
-### src/components/atlas/CreateRelationshipModal.tsx
-Modal for creating an `EntityRelationship` between two people, with autocomplete suggestions from `SUGGESTED_TYPES` + existing relationship types. **Not imported/used anywhere** — `PeopleAtlas.tsx` uses its own inline pending-connection UI instead. Likely dead code.
+### src/components/atlas/EntityPicker.tsx
+Searchable labeled native entity selector used in relationship and parent editors. Searches names, aliases, qualifiers, types and subtypes; excludes a specified endpoint and distinguishes same-name records.
 
-### src/components/atlas/EditRelationshipModal.tsx
-Modal for editing/deleting an existing `EntityRelationship`'s type and description. Used by `PeopleAtlas.tsx`.
+### src/components/atlas/FamilyJunctionNode.tsx
+Fixed-size derived React Flow junction for shared parents. Opens its original assertions; never saves as an entity or receives a timeline assignment.
 
 ### src/components/atlas/PeopleAtlas.tsx
-Main People Atlas canvas (React Flow). Combines `usePeopleAtlas()` (people/relationships/periods) with `getEntityMentionsWithBooks()` (mention counts). Renders `PersonNode`s + `RelationshipEdge`s over `TimelineBands`. Dragging a person into a band auto-assigns `timeline_period_id` via `findPeriodForY()`. Drawing a connection opens an inline relationship-type prompt (quick-select buttons + free text) rather than a modal.
+Provider-wrapped Atlas with Family/All relationships views, searchable entities/types/assertions/references, explicit camera focus, temporary result reveal, category/type/entity/period/status filters, bundles and immediate-neighbor focus. Derives shared-parent branches from confirmed direct assertions, preserves manual positions, and exposes shared editors and timeline controls.
 
 ### src/components/atlas/PersonNode.tsx
-React Flow node for a person: avatar-initial circle, name, mention count, description, hover-only edit/delete buttons. Exports `PersonNodeData` type. 4-sided handles (top/left/bottom/right, source+target each).
+Memoized card for any Atlas entity with type/subtype, qualifier, mentions and keyboard/touch Inspect action; four-sided source/target handles. Exports `PersonNodeData`; management actions live in the Atlas detail panel.
 
 ### src/components/atlas/RelationshipEdge.tsx
-React Flow edge for person-to-person relationships. Dashed gray line, label shows `type` with spaces (hyphens replaced), click opens edit via `data.onEdit`.
+Directional/category-styled relationship edge or orthogonal family segment. Exports `RelationshipEdgeData`; supports expanded path offsets, assertion-status dashes, selection and zoom-aware keyboard/touch labels.
+
+### src/components/atlas/RelationshipEditor.tsx
+Shared asynchronous create/edit/delete relationship dialog. Searchable endpoints and type suggestions, arbitrary custom definitions/categories/symmetry, statement/direction preview, status/period/parentage context and validated structured Scripture evidence. Duplicate checks and save failures retain input.
+
+### src/components/atlas/SetParentsModal.tsx
+Searchable one/two-parent shortcut with explicit direct-parentage confirmation, nature and period context. Uses one atomic save; existing unrelated assertions and evidence are preserved.
 
 ### src/components/atlas/TimelineBands.tsx
 Renders SVG background bands per `TimelinePeriod` (colored, semi-transparent, sticky left label) as a React Flow child (`className="react-flow__background"`, `zIndex:-1`). Implements custom pointer-based drag-to-resize on each band's bottom edge (`MIN_BAND_HEIGHT = 120`), calling `onResizePeriod(periodId, newHeight)` on release. Also exported as named `{ TimelineBands }`.
+
+### src/components/atlas/atlas.css
+Scoped Atlas layout and visual system: paper/ink toolbar, search, responsive filters, desktop details pane/phone lower pane, typed edge labels, family junctions and light/dark presentation.
 
 ## src/components/common/
 
@@ -113,7 +124,7 @@ Wraps `Modal` with a confirm/cancel footer. `variant`: danger/primary.
 Text input with optional `label` and `error`. Forwards ref.
 
 ### src/components/common/Modal.tsx
-Portal-based modal (renders into `document.body`). Handles Escape-to-close and body scroll lock. `size`: sm/md/lg.
+Portal-based modal (renders into `document.body`). Includes labeled dialog semantics, keyboard focus trapping/restoration, Escape-to-close and body scroll lock. A ref keeps close callbacks current without restarting focus on form updates. `size`: sm/md/lg.
 
 ### src/components/common/Select.tsx
 `<select>` wrapper with `label`, `error`, `options: {value,label}[]`, `placeholder`. Forwards ref.
@@ -124,16 +135,16 @@ Portal-based modal (renders into `document.body`). Handles Escape-to-close and b
 Renders a row of `EntityTag` chips for a verse's mentions, plus a "+" add-tag button. Returns `null` if no mentions and no `onAddClick`. Used inside `VerseNode`.
 
 ### src/components/entities/EntityDetailSidebar.tsx
-Fixed right-side panel showing one entity's relationships (via `getEntityRelationships` query) and verse mentions grouped by topic (via `useEntityMentions`). Click a mention navigates to `/topic/:id`.
+Fixed right-side panel showing full source → relationship → target statements (via `getEntityRelationships` query) and verse mentions grouped by topic (via `useEntityMentions`). Click a mention navigates to `/topic/:id`.
 
 ### src/components/entities/EntityExplorer.tsx
 Full entity browser: search + type-filter pills, grouped grid by `EntityType`, delete confirmation. Contains local `EntityCard` component. Opens `EntityDetailSidebar` on click. Used by `EntityExplorerPage` (currently unrouted).
 
 ### src/components/entities/EntityTag.tsx
-Single pill-shaped entity chip (icon + name), optional `compact` sizing, optional remove button (shows on hover).
+Single pill-shaped entity chip (icon + name; qualifier in tooltip), optional `compact` sizing, optional remove button (shows on hover).
 
 ### src/components/entities/TagEntityModal.tsx
-Modal to tag an entity onto a verse: pick mention `context`, search/select an existing entity, or inline-create a new one via `useEntities().createEntity`. Used by `TopicGraphView`.
+Modal to tag an entity onto a verse: alias/qualifier-aware search and distinct same-name confirmation with save errors. Pick mention `context`, search/select an existing entity, or inline-create a new one via `useEntities().createEntity`. Used by `TopicGraphView`.
 
 ## src/components/graph/
 
@@ -271,7 +282,7 @@ React Query + Supabase CRUD/subscription hook for `Entity` records (global, not 
 Exports two hooks: `useVerseMentions(verseId)` (mentions for one verse, with create/delete mutations — used by `VerseNode`/`TopicGraphView` flow) and `useEntityMentions(entityId)` (read-only, all mentions for one entity — used by `EntityDetailSidebar`).
 
 ### src/hooks/usePeopleAtlas.ts
-Composite hook combining `useEntities()` (filtered to `type==='person'`), `useTimelinePeriods()`, and `entity_relationships` CRUD (global query key `entity-relationships-all`). Also exposes `savePosition`/`assignPeriod` mutations. Used by `PeopleAtlas.tsx` and `BibleMap.tsx` (for relationships only).
+Composite Atlas hook exposes all entities, people, relationships with evidence, definitions/schema readiness, periods, retry/errors and CRUD. Adds `saveRelationship` and atomic `setParents`, realtime definition/evidence invalidation and optimistic per-entity position rollback. Legacy map relationship methods stay compatible.
 
 ### src/hooks/usePWA.ts
 Tracks online/offline (`navigator.onLine` + events), install-prompt availability (`beforeinstallprompt`), and installed/standalone state. Returns `{ isOffline, canInstall, isInstalled, install, isPWA }`. Used by `Header.tsx`.
@@ -300,6 +311,15 @@ Pure, pre-indexed membership and display-name resolution, book/density intersect
 Pure release validator returning actionable errors for IDs, manifest drift, catalog revision, references, evidence, scope/name conflicts, drafts, coordinates, ring closure, route endpoint/geometry consistency and identification links.
 
 
+### src/lib/atlasGraph.ts
+Pure `deriveFamilies()` groups eligible exact direct-parent pairs by parentage/period context; excludes ambiguous, ancestral and uncertain cases. `bundleRelationships()`/`pairKey()` retain individual assertions while grouping endpoint pairs visually.
+
+### src/lib/atlasSearch.ts
+Pure `buildAtlasSearch()`, `normalizeSearch()` and `searchAtlas()`: typed entity/type/assertion/reference results, explicit aliases/qualifiers, book-abbreviation normalization, multiword matching and deterministic ranking.
+
+### src/lib/relationships.ts
+Shared built-in extensible definitions/category styling, explicit legacy resolution, entity qualifiers/aliases, full statements, canonical assertion identity, validated Scripture parsing/formatting and user-readable persistence errors. Parentage semantics are independent of marriage/concubinage.
+
 ### src/lib/bibleApi.ts
 Client-facing Bible-text-fetch API. Spins up a singleton Web Worker (`bibleWorker.ts`) and communicates via `postMessage`/job-id promise map. Exports `fetchKjvVerse(book, chapter, verse)`, `fetchKjvVerseRange(book, chapter, verseStart, verseEnd)`, `fetchKjvBook(book)` (full local book for map coverage), `fetchKjvCustomVerses(book, selections: VerseSelection[])` (the "fancy indexing" entry point), and `VerseSelection` interface.
 
@@ -322,13 +342,13 @@ Pure local search/ranking utility for historical peoples and kingdoms. Exports `
 Color/label constant maps: `EDGE_COLORS`/`EDGE_LABELS` (by `ConnectionType`), `CROSS_TOPIC_COLOR`, `EDGE_STYLE`, `VERSE_TYPE_COLORS`, `ANCHOR_COLOR_PALETTE` (8-color palette for word anchors, distinct from edge colors), `ENTITY_TYPE_COLORS`/`ENTITY_TYPE_ICONS`/`ENTITY_TYPE_LABELS` (by `EntityType`), `ENTITY_RELATION_LABELS` (static map — note: since `EntityRelationType` is now free-form string, this map is only a fallback/legacy set of labels, not exhaustive).
 
 ### src/lib/supabase.ts
-All Supabase client setup + every DB query/mutation/subscription function in the app (topics, verses, connections, topic_links, search, entities, entity_mentions, entity_relationships, timeline_periods, atlas helpers). ~550 lines, organized in commented sections. Real-time subscriptions use `supabase.channel(name-with-random-suffix).on('postgres_changes', ...)`. Also exports `TopicCounts`, `getTopicCounts(topicIds)` (batched RPC with legacy fallback), `getMentionsByTopic(topicId)` (500-row pages), and abortable `searchVerses(query, signal?)`. Also exports `AtlasEntityMention` interface and `getEntityMentionsWithBooks()` (joined query used by `PeopleAtlas` for mention counts).
+All Supabase client setup + every DB query/mutation/subscription function in the app (topics, verses, connections, topic_links, search, entities, entity_mentions, entity_relationships, timeline_periods, atlas helpers). Organized in commented sections. Entity/relationship/definition/evidence reads are paginated. Adds `getRelationshipDefinitions`, `saveAtlasRelationship` and `setAtlasParents`; legacy reads tolerate missing migration 010. Real-time subscriptions use `supabase.channel(name-with-random-suffix).on('postgres_changes', ...)`. Also exports `TopicCounts`, `getTopicCounts(topicIds)` (batched RPC with legacy fallback), `getMentionsByTopic(topicId)` (500-row pages), and abortable `searchVerses(query, signal?)`. Also exports `AtlasEntityMention` interface and `getEntityMentionsWithBooks()` (joined query used by `PeopleAtlas` for mention counts).
 
 ### src/lib/travelInsights.ts
 Pure geography/study-estimate utility for the map. Exports travel place, route option, and insight types plus haversine distance, terrain-context heuristics, walking-day ranges, and three intentionally approximate direct/overland/corridor options.
 
 ### src/lib/types.ts
-All shared TypeScript interfaces/types: `VerseType`, `ConnectionType`/`EdgeType`, `Topic`, `Verse`, `Connection`, `TopicLink`, `VerseWithTopic`, `EntityType`, `EntityMentionContext`, `EntityRelationType` (= `string`), `Entity`, `EntityMention`, `EntityMentionWithEntity`, `EntityMentionWithVerse`, `EntityRelationship`, `TimelinePeriod`.
+All shared TypeScript interfaces/types, including optional relationship definitions/metadata/evidence and `RelationshipDraft`: `VerseType`, `ConnectionType`/`EdgeType`, `Topic`, `Verse`, `Connection`, `TopicLink`, `VerseWithTopic`, `EntityType`, `EntityMentionContext`, `EntityRelationType` (= `string`), `Entity`, `EntityMention`, `EntityMentionWithEntity`, `EntityMentionWithVerse`, `EntityRelationship`, `TimelinePeriod`.
 
 ### src/lib/utils.ts
 Small helpers: `formatDate()`, `buildAnchorKey(cleanWord, occurrenceIndex)` / `parseAnchorKey(anchorKey)` (word-anchor composite-key codec, handles duplicate words in a verse via occurrence index; legacy fallback for anchors without an index).
@@ -353,6 +373,7 @@ Chronological order (by filename prefix):
 
 8. `008_map_paths.sql` — Saved map paths with ordered JSON points and style metadata.
 9. `009_performance.sql` — Invoker-security batched topic count RPC, trigram indexes for substring search and topic/created-at verse index.
+10. `010_relationship_atlas.sql` — Extensible definitions, relationship context/evidence, same-name entity identities, exact legacy classification, invoker atomic relationship/parent RPCs with cycle/duplicate checks, indexes and realtime. Requires explicit deployment to Supabase.
 
 ## Config files
 
@@ -377,3 +398,11 @@ Chronological order (by filename prefix):
 
 - **scripts/test-performance.mjs** — Worker and map regression checks and diagnostic timings against the Git HEAD implementations; run with `node scripts/test-performance.mjs` before committing to compare this pass.
 - **docs/performance-audit.md** — Bottlenecks addressed, measurements, migration deployment and verification limits.
+
+## Relationship Atlas verification
+
+- **docs/relationship-atlas-plan.md** — Design/implementation scope and completion checks.
+- **docs/relationship-atlas-verification.md** — Implemented behavior, database rollout requirement and measured verification limits.
+- **scripts/test-relationships.mjs** — Pure semantic, grouping, bundling, identity, Scripture/search regression checks and large-index diagnostics (`npm run test:relationships`).
+- **scripts/test-relationship-database.mjs** — Boots a disposable local PostgreSQL instance, applies migrations and verifies RPC atomicity, evidence, cycles, identity and invoker access (`npm run test:relationships:database`); never uses project credentials.
+- **scripts/relationship-preview.html** — Development-only in-memory browser fixture. Intercepts application reads/writes and disables realtime transport; `?failSave=1` simulates retained-input failures. Not included in the production build.

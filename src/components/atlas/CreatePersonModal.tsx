@@ -1,83 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Modal from '@/components/common/Modal';
-import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
-import { Entity } from '@/lib/types';
+import type { Entity, EntityType } from '@/lib/types';
+import { entityAliases, errorMessage } from '@/lib/relationships';
 import { ENTITY_TYPE_COLORS } from '@/lib/edgeTypes';
 
-interface CreatePersonModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (data: { name: string; description: string; color: string }) => void;
-  editingPerson?: Entity | null;
+export type AtlasEntityInput = Pick<Entity, 'name' | 'description' | 'color' | 'type' | 'metadata'>;
+interface Props { open: boolean; onClose: () => void; onSubmit: (data: AtlasEntityInput) => Promise<unknown>; editingPerson?: Entity | null; entities?: Entity[] }
+export default function CreatePersonModal(props: Props) {
+  return props.open ? <EntityForm key={props.editingPerson?.id ?? 'new'} {...props} /> : null;
 }
-
-export default function CreatePersonModal({ open, onClose, onSubmit, editingPerson }: CreatePersonModalProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-
-  useEffect(() => {
-    if (open) {
-      setName(editingPerson?.name || '');
-      setDescription(editingPerson?.description || '');
-    }
-  }, [open, editingPerson]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    
-    // Default person color
-    const color = editingPerson?.color || ENTITY_TYPE_COLORS['person'];
-
-    onSubmit({
-      name: name.trim(),
-      description: description.trim(),
-      color,
-    });
-    
-    onClose();
-  };
-
-  const isEditing = !!editingPerson;
-
-  return (
-    <Modal open={open} onClose={onClose} title={isEditing ? 'Edit Person' : 'Create Person'} size="sm">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Name
-          </label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. David, Isaiah, Ruth"
-            autoFocus
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Description (Optional)
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="A brief note about this person..."
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors resize-none"
-            rows={3}
-          />
-        </div>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={!name.trim()}>
-            {isEditing ? 'Save Changes' : 'Create Person'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+function EntityForm({ onClose, onSubmit, editingPerson, entities = [] }: Props) {
+  const [name, setName] = useState(editingPerson?.name ?? ''); const [description, setDescription] = useState(editingPerson?.description ?? '');
+  const [type, setType] = useState<EntityType>(editingPerson?.type ?? 'person');
+  const [kind, setKind] = useState(String(editingPerson?.metadata?.kind ?? ''));
+  const [qualifier, setQualifier] = useState(String(editingPerson?.metadata?.qualifier ?? ''));
+  const [aliases, setAliases] = useState(editingPerson ? entityAliases(editingPerson).join(', ') : '');
+  const [distinct, setDistinct] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const matches = entities.filter(e => e.id !== editingPerson?.id && e.type === type && e.name.toLowerCase() === name.trim().toLowerCase());
+  return <Modal open onClose={busy ? () => {} : onClose} title={editingPerson ? 'Edit entity' : 'Add person or entity'}>
+    <form className="space-y-4" onSubmit={async e => { e.preventDefault(); setError(''); if (matches.length && (!distinct || !qualifier.trim())) { setError('Add a distinguishing description and confirm this is a different entity.'); return; } setBusy(true); try { await onSubmit({ name: name.trim(), description: description.trim(), type, color: editingPerson?.type === type ? editingPerson.color : ENTITY_TYPE_COLORS[type], metadata: { ...editingPerson?.metadata, kind: kind || undefined, qualifier: qualifier.trim(), aliases: aliases.split(',').map(a => a.trim()).filter(Boolean) } }); onClose(); } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); } }}>
+      <fieldset disabled={busy} className="space-y-3">
+      <label className="atlas-label">Name<input className="atlas-input mt-1" value={name} onChange={e => { setName(e.target.value); setDistinct(false); }} required /></label>
+      <label className="atlas-label">Entity type<select className="atlas-input" value={kind || type} onChange={e => { const value = e.target.value; if (['group','institution','divine entity'].includes(value)) { setType('concept'); setKind(value); } else { setType(value as EntityType); setKind(''); } }}>{['person','place','nation','event','object','concept','group','institution','divine entity'].map(t => <option key={t}>{t}</option>)}</select></label>
+      <label className="atlas-label">Distinguishing description<input className="atlas-input mt-1" placeholder="e.g. son of Saul, or the prophet" value={qualifier} onChange={e => setQualifier(e.target.value)} /></label>
+      <label className="atlas-label">Aliases<input className="atlas-input mt-1" placeholder="Separate alternate names with commas" value={aliases} onChange={e => setAliases(e.target.value)} /></label>
+      <label className="atlas-label">Notes<textarea className="atlas-input mt-1" value={description} onChange={e => setDescription(e.target.value)} rows={3} /></label>
+      {matches.length > 0 && <div className="atlas-inset space-y-2"><p className="atlas-help">Already recorded: {matches.map(m => `${m.name} (${m.metadata.qualifier || m.description || m.type})`).join('; ')}. Cancel to use an existing entity.</p><label className="flex gap-2 text-sm"><input type="checkbox" checked={distinct} onChange={e => setDistinct(e.target.checked)} />This is a different entity with the same name.</label></div>}
+      </fieldset>
+      {error && <p role="alert" className="atlas-error">{error}</p>}
+      <div className="flex justify-end gap-2"><button type="button" className="atlas-button" disabled={busy} onClick={onClose}>Cancel</button><button className="atlas-button atlas-primary" disabled={busy || !name.trim()}>{busy ? 'Saving…' : 'Save entity'}</button></div>
+    </form>
+  </Modal>;
 }

@@ -11,7 +11,7 @@ function worker(source) {
   let handler;
   let fetches = 0;
   const results = [];
-  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
     exports: {}, console,
     fetch: async () => { fetches++; return { ok: true, json: async () => bible }; },
     self: { addEventListener: (_type, callback) => { handler = callback; }, postMessage: result => results.push(result) },
@@ -49,7 +49,7 @@ try {
   const oldSource = execFileSync('git', ['show', 'HEAD:src/lib/passagePlaces.ts'], { encoding: 'utf8' });
   // Compile the previous matcher against exactly the same catalog, isolating the optimization.
   const oldModule = { exports: {} };
-  vm.runInNewContext(ts.transpileModule(oldSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+  vm.runInNewContext(ts.transpileModule(oldSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
     exports: oldModule.exports, require: () => ({ BIBLICAL_PLACE_CLUSTERS: places }),
   });
   const current = await server.ssrLoadModule('/src/lib/passagePlaces.ts');

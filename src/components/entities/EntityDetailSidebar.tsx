@@ -1,3 +1,4 @@
+import { statement } from '@/lib/relationships';
 import { Entity, EntityMentionWithVerse } from '@/lib/types';
 import { useEntityMentions } from '@/hooks/useEntityMentions';
 import { useEntities } from '@/hooks/useEntities';
@@ -83,18 +84,12 @@ export default function EntityDetailSidebar({ entity, onClose }: EntityDetailSid
             </h3>
             <div className="space-y-1.5">
               {relationships.map((rel) => {
-                const isFrom = rel.from_entity_id === entity.id;
-                const otherEntityId = isFrom ? rel.to_entity_id : rel.from_entity_id;
-                const otherEntity = entities.find((e) => e.id === otherEntityId);
-                if (!otherEntity) return null;
                 return (
                   <div
                     key={rel.id}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-sm"
                   >
-                    <span className="text-gray-500 dark:text-gray-400 capitalize">{rel.type.replace(/-/g, ' ')}</span>
-                    <span className="text-xs">{ENTITY_TYPE_ICONS[otherEntity.type]}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{otherEntity.name}</span>
+                    <span className="text-gray-700 dark:text-gray-200">{statement(rel, new Map(entities.map(e => [e.id, e])))}</span>
                   </div>
                 );
               })}

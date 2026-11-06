@@ -1,3 +1,5 @@
+import type { RelationshipDefinition, RelationshipDraft } from './types';
+import { BUILTIN_DEFINITIONS } from './relationships';
 import { createClient } from '@supabase/supabase-js';
 import { Topic, Verse, Connection, TopicLink, VerseWithTopic, Entity, EntityMention, EntityMentionWithEntity, EntityMentionWithVerse, EntityRelationship, EntityType, TimelinePeriod, MapPath } from './types';
 
@@ -289,13 +291,17 @@ export function subscribeToTopicLinks(callback: () => void) {
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
+async function readAll<T>(table: string, select = '*'): Promise<T[]> {
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.from(table).select(select).order('id').range(offset, offset + 499);
+    if (error) throw error;
+    rows.push(...(data as unknown as T[] ?? []));
+    if (!data || data.length < 500) return rows;
+  }
+}
 export async function getEntities(): Promise<Entity[]> {
-  const { data, error } = await supabase
-    .from('entities')
-    .select('*')
-    .order('name', { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return (await readAll<Entity>('entities')).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
 export async function getEntitiesByType(type: EntityType): Promise<Entity[]> {
@@ -412,12 +418,7 @@ export async function deleteEntityMention(id: string): Promise<void> {
 // ─── Entity Relationships ─────────────────────────────────────────────────────
 
 export async function getEntityRelationships(entityId: string): Promise<EntityRelationship[]> {
-  const { data, error } = await supabase
-    .from('entity_relationships')
-    .select('*')
-    .or(`from_entity_id.eq.${entityId},to_entity_id.eq.${entityId}`);
-  if (error) throw error;
-  return data || [];
+  return (await getAllEntityRelationships()).filter(r => r.from_entity_id === entityId || r.to_entity_id === entityId);
 }
 
 export async function createEntityRelationship(rel: Omit<EntityRelationship, 'id' | 'created_at'>): Promise<EntityRelationship> {
@@ -575,18 +576,42 @@ export async function assignEntityToPeriod(entityId: string, periodId: string | 
 }
 
 export async function getAllEntityRelationships(): Promise<EntityRelationship[]> {
-  const { data, error } = await supabase
-    .from('entity_relationships')
-    .select('*');
+  const relationships = await readAll<EntityRelationship>('entity_relationships');
+  try {
+    const evidence = await readAll<import('./types').RelationshipEvidence & { relationship_id: string }>('relationship_evidence');
+    const byRelationship = new Map<string, typeof evidence>();
+    for (const item of evidence) byRelationship.set(item.relationship_id, [...(byRelationship.get(item.relationship_id) ?? []), item]);
+    return relationships.map(r => ({ ...r, evidence: byRelationship.get(r.id) ?? [] }));
+  } catch (error) {
+    if (!['PGRST205', '42P01'].includes((error as { code?: string }).code ?? '')) throw error;
+    return relationships;
+  }
+}
+export async function getRelationshipDefinitions(): Promise<{ definitions: RelationshipDefinition[]; ready: boolean }> {
+  try { return { definitions: await readAll<RelationshipDefinition>('relationship_definitions'), ready: true }; }
+  catch (error) {
+    if (!['PGRST205', '42P01'].includes((error as { code?: string }).code ?? '')) throw error;
+    return { definitions: BUILTIN_DEFINITIONS, ready: false };
+  }
+}
+export async function saveAtlasRelationship(draft: RelationshipDraft): Promise<string> {
+  const { data, error } = await supabase.rpc('atlas_save_relationship', { p_draft: draft });
   if (error) throw error;
-  return data || [];
+  return data as string;
+}
+export async function setAtlasParents(child: string, parents: string[], parentage: string, period: string | null) {
+  const { error } = await supabase.rpc('atlas_set_parents', { p_child: child, p_parents: parents, p_parentage: parentage, p_period: period });
+  if (error) throw error;
 }
 
-export function subscribeToEntityRelationships(callback: () => void) {
-  const channel = supabase.channel(`entity_relationships-${Math.random().toString(36).substring(7)}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'entity_relationships' }, callback)
-    .subscribe();
-  return channel;
+export function subscribeToEntityRelationships(callback: () => void, includeAtlasDetails = false) {
+  const channel = supabase.channel(`entity-relationships-${Math.random().toString(36).substring(7)}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'entity_relationships' }, callback);
+  if (includeAtlasDetails) {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'relationship_evidence' }, callback)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'relationship_definitions' }, callback);
+  }
+  return channel.subscribe();
 }
 
 // ─── Map Paths ─────────────────────────────────────────────────────────────

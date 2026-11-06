@@ -10,11 +10,13 @@ import {
   subscribeToEntities,
 } from '@/lib/supabase';
 
+const EMPTY_ENTITIES: Entity[] = [];
+
 export function useEntities() {
   const queryClient = useQueryClient();
 
   const {
-    data: entities = [],
+    data: entities = EMPTY_ENTITIES,
     isLoading: loading,
     error,
     refetch,

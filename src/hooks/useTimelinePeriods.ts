@@ -10,10 +10,12 @@ import {
   subscribeToTimelinePeriods,
 } from '@/lib/supabase';
 
+const EMPTY_PERIODS: TimelinePeriod[] = [];
+
 export function useTimelinePeriods() {
   const queryClient = useQueryClient();
 
-  const { data: periods = [], isLoading: loading, error } = useQuery({
+  const { data: periods = EMPTY_PERIODS, isLoading: loading, error } = useQuery({
     queryKey: ['timeline-periods'],
     queryFn: getTimelinePeriods,
   });

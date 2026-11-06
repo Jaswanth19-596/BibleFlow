@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'vite';
+import path from 'node:path';
+const server = await createServer({ configFile: false, resolve: { alias: { '@': path.resolve('src') } }, server: { middlewareMode: true, hmr: false, ws: false }, optimizeDeps: { noDiscovery: true, include: [] } });
+let count = 0;
+const test = (name, fn) => { fn(); count++; console.log(`✓ ${name}`); };
+try {
+  const { BUILTIN_DEFINITIONS: defs, resolveDefinition, relationshipIdentity: identity, parseEvidence, formatEvidence, statement } = await server.ssrLoadModule('/src/lib/relationships.ts');
+  const { deriveFamilies, bundleRelationships } = await server.ssrLoadModule('/src/lib/atlasGraph.ts');
+  const { buildAtlasSearch, searchAtlas } = await server.ssrLoadModule('/src/lib/atlasSearch.ts');
+  const entity = (id, name = id, metadata = {}) => ({ id, name, type: 'person', metadata, description: '', atlas_x: 0, atlas_y: 0 });
+  const entities = ['saul','rizpah','child1','child2','other','child3'].map(id => entity(id));
+  const rel = (id, from, to, type = 'parent of', metadata = { status: 'explicit', lineage_scope: 'direct', parentage: 'unspecified' }) => ({ id, from_entity_id: from, to_entity_id: to, type, metadata, description: '' });
+  const pair = [rel('a','saul','child1'), rel('b','rizpah','child1'), rel('c','saul','child2'), rel('d','rizpah','child2')];
+  test('shared parents yield one junction and two children', () => { const groups = deriveFamilies(entities,pair,defs); assert.equal(groups.length,1); assert.deepEqual(groups[0].children,['child1','child2']); assert.equal(groups[0].relationshipIds.length,4); });
+  test('a different parent pair stays separate', () => assert.equal(deriveFamilies(entities,[...pair,rel('e','saul','child3'),rel('f','other','child3')],defs).length,2));
+  test('single parent remains a direct edge', () => assert.equal(deriveFamilies(entities,pair.slice(0,1),defs).length,0));
+  test('legacy labels do not establish direct parentage', () => assert.equal(deriveFamilies(entities,pair.map(r=>({...r,metadata:undefined})),defs).length,0));
+  test('ancestor, inferred, disputed, and unspecified assertions do not group', () => {
+    for (const patch of [{lineage_scope:'ancestor'},{status:'inferred'},{status:'disputed'},{status:'unspecified'}]) assert.equal(deriveFamilies(entities,pair.map(r=>({...r,metadata:{...r.metadata,...patch}})),defs).length,0);
+  });
+  test('adoptive and biological contexts do not combine', () => assert.equal(deriveFamilies(entities,[{...pair[0],metadata:{...pair[0].metadata,parentage:'adoptive'}},{...pair[1],metadata:{...pair[1].metadata,parentage:'biological'}}],defs).length,0));
+  test('ambiguous three-parent context does not create a junction', () => assert.equal(deriveFamilies(entities,[...pair.slice(0,2),rel('x','other','child1')],defs).length,0));
+  test('inverse parent wording resolves without inferring marriage', () => { const grouped = deriveFamilies(entities,[rel('a','child1','saul','son of'),rel('b','rizpah','child1','mother of')],defs); assert.equal(grouped.length,1); assert(!grouped[0].relationshipIds.includes('marriage')); });
+  test('different periods do not combine', () => assert.equal(deriveFamilies(entities,[pair[0],{...pair[1],metadata:{...pair[1].metadata,period_id:'later'}}],defs).length,0));
+  test('role labels retain their distinct semantics', () => assert.equal(new Set(['priest of','prophet of','prophet to','concubine of','married to'].map(type=>resolveDefinition({type},defs).id)).size,5));
+  test('custom types work without a predefined vocabulary', () => { const def=resolveDefinition({type:'keeper of the gate'},defs); assert.equal(def.category,'other'); assert.equal(def.parent_direction,null); });
+  test('duplicates normalize known inverse and symmetric wording', () => { assert.equal(identity(rel('a','saul','rizpah','married to')),identity(rel('b','rizpah','saul','married-to'))); assert.equal(identity(rel('a','saul','child1')),identity(rel('b','child1','saul','son of'))); assert.equal(identity(rel('a','saul','child1','mentor of')),identity(rel('b','child1','saul','disciple of'))); });
+  test('different directed roles and contexts remain separate assertions', () => { assert.notEqual(identity(rel('a','saul','rizpah','prophet of')),identity(rel('b','saul','rizpah','prophet to'))); assert.notEqual(identity(pair[0]),identity({...pair[0],metadata:{...pair[0].metadata,period_id:'later'}})); });
+  test('bundles retain every ID and direction', () => { const items=[rel('a','saul','rizpah','married to'),rel('b','rizpah','saul','concubine of')]; const bundle=bundleRelationships(items); assert.equal(bundle.length,1); assert.deepEqual(bundle[0].items,items); });
+  test('evidence accepts canonical and abbreviated references', () => { assert.equal(formatEvidence(parseEvidence('2 Sam 21:8')[0]),'2 Samuel 21:8'); assert.equal(parseEvidence('Genesis 1:1-3; John 3:16').length,2); });
+  test('invalid books, chapters, ranges, and verse zero are rejected', () => { for (const text of ['Unknown 1:1','John 99:1','John 3:99','John 3:16-2','John 3:0']) assert.throws(()=>parseEvidence(text)); });
+  test('entity statements read correctly from either endpoint', () => { const text=statement(rel('a','saul','child1'),new Map(entities.map(e=>[e.id,e]))); assert.equal(text,'saul — parent of → child1'); });
+  const sameNames=[entity('one','Zechariah',{qualifier:'priest',aliases:['Zacharias']}),entity('two','Zechariah',{qualifier:'prophet'})];
+  const withEvidence={...rel('e','saul','rizpah','concubine of'),description:'A recorded relationship',evidence:[...parseEvidence('2 Samuel 21:8').map(e=>({...e,note:'passage evidence'}))]};
+  const index=buildAtlasSearch([...entities,...sameNames],[...pair,withEvidence],defs);
+  test('search keeps same-name people separate with useful qualifiers', () => { const matches=searchAtlas(index,'Zechariah').filter(i=>i.kind==='Entity'); assert.equal(matches.length,2); assert.notEqual(matches[0].detail,matches[1].detail); });
+  test('search finds explicit aliases and ranks exact entities first', () => { assert.equal(searchAtlas(index,'Zacharias')[0].entityIds[0],'one'); assert.equal(searchAtlas(index,'saul')[0].kind,'Entity'); });
+  test('search finds custom labels, notes, and multiword endpoint matches', () => { assert(searchAtlas(index,'concubine of').some(i=>i.relationshipId==='e')); assert(searchAtlas(index,'recorded relationship').some(i=>i.id==='e')); assert(searchAtlas(index,'saul rizpah').some(i=>i.id==='e')); });
+  test('reference search normalizes book abbreviations', () => assert(searchAtlas(index,'2 Sam 21:8').some(i=>i.kind==='Reference'&&i.relationshipId==='e')));
+  test('empty and unknown queries produce no results', () => { assert.deepEqual(searchAtlas(index,'  '),[]); assert.deepEqual(searchAtlas(index,'doesnotexist'),[]); });
+  const largeEntities=Array.from({length:3000},(_,i)=>entity(`person-${i}`,`Person ${i}`));
+  const largeRels=Array.from({length:6000},(_,i)=>rel(`rel-${i}`,`person-${i%3000}`,`person-${(i+1)%3000}`,'served under'));
+  const started=performance.now(); const large=buildAtlasSearch(largeEntities,largeRels,defs); const built=performance.now(); const matches=searchAtlas(large,'Person 29');
+  assert(matches.length); console.log(`3000 entities + 6000 assertions: index ${Math.round(built-started)} ms, search ${Math.round(performance.now()-built)} ms (pure utilities, not browser rendering).`);
+  console.log(`${count} relationship checks passed.`);
+} finally { await server.close(); }

@@ -103,6 +103,45 @@ export interface EntityRelationship {
   description: string;
   sort_order?: number;
   created_at: string;
+  definition_id?: string | null;
+  metadata?: RelationshipMetadata;
+  evidence?: RelationshipEvidence[];
+}
+
+export type RelationshipCategory = 'family' | 'religious' | 'political' | 'geography' | 'other';
+export interface RelationshipDefinition {
+  id: string;
+  label: string;
+  category: RelationshipCategory;
+  symmetric: boolean;
+  inverse_label: string | null;
+  parent_direction: 'source' | 'target' | null;
+}
+export interface RelationshipMetadata {
+  status?: 'unspecified' | 'explicit' | 'inferred' | 'disputed';
+  lineage_scope?: 'unspecified' | 'direct' | 'ancestor';
+  parentage?: 'unspecified' | 'biological' | 'adoptive' | 'legal';
+  period_id?: string | null;
+  [key: string]: unknown;
+}
+export interface RelationshipEvidence {
+  id?: string;
+  book: string;
+  chapter: number;
+  verse_start: number;
+  verse_end: number | null;
+  note: string;
+}
+export interface RelationshipDraft {
+  id?: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  type: string;
+  description: string;
+  category: RelationshipCategory;
+  symmetric: boolean;
+  metadata: RelationshipMetadata;
+  evidence: RelationshipEvidence[];
 }
 
 export interface TimelinePeriod {

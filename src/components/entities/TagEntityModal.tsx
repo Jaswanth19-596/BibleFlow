@@ -1,3 +1,4 @@
+import { entityAliases, entityQualifier, errorMessage } from '@/lib/relationships';
 import { useState, useEffect, useCallback } from 'react';
 import Modal from '@/components/common/Modal';
 import Button from '@/components/common/Button';
@@ -34,6 +35,10 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<EntityType>('person');
   const [newDescription, setNewDescription] = useState('');
+  const [distinct, setDistinct] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const duplicate = entities.some(e => e.name.trim().toLowerCase() === newName.trim().toLowerCase() && e.type === newType);
 
   useEffect(() => {
     if (open) {
@@ -43,6 +48,7 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
       setNewName('');
       setNewType('person');
       setNewDescription('');
+      setDistinct(false); setSaveError('');
     }
   }, [open]);
 
@@ -51,23 +57,26 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
     .filter((e) => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
-      return e.name.toLowerCase().includes(q) || e.type.includes(q);
+      return `${e.name} ${entityQualifier(e)} ${entityAliases(e).join(' ')} ${e.type}`.toLowerCase().includes(q);
     });
 
   const handleTag = useCallback(async (entity: Entity) => {
-    await onTag(entity.id, context);
-    onClose();
+    setBusy(true); setSaveError('');
+    try { await onTag(entity.id, context); onClose(); } catch (error) { setSaveError(errorMessage(error)); } finally { setBusy(false); }
   }, [onTag, context, onClose]);
 
   const handleCreate = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
+    if (duplicate && (!distinct || !newDescription.trim())) { setSaveError('Confirm this is a different entity and add a description to distinguish it.'); return; }
+    setBusy(true); setSaveError('');
+    try {
     const color = ENTITY_TYPE_COLORS[newType];
     const entity = await createEntity({
       name: newName.trim(),
       type: newType,
       description: newDescription.trim(),
-      metadata: {},
+      metadata: { qualifier: newDescription.trim() },
       color,
       timeline_period_id: null,
       atlas_x: 0,
@@ -75,11 +84,13 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
     });
     await onTag(entity.id, context);
     onClose();
-  }, [newName, newType, newDescription, context, createEntity, onTag, onClose]);
+    } catch (error) { setSaveError(errorMessage(error)); } finally { setBusy(false); }
+  }, [newName, newType, newDescription, context, createEntity, onTag, onClose, duplicate, distinct]);
 
   return (
     <Modal open={open} onClose={onClose} title="Tag Entity" size="md">
       <div className="space-y-4">
+        {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
         {/* Context selector */}
         <Select
           label="Role in this verse"
@@ -111,11 +122,11 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
             filteredEntities.map((entity) => (
               <button
                 key={entity.id}
-                onClick={() => handleTag(entity)}
+                onClick={() => handleTag(entity)} disabled={busy}
                 className="w-full min-h-11 flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
               >
                 <span className="text-base">{ENTITY_TYPE_ICONS[entity.type]}</span>
-                <span className="font-medium text-gray-900 dark:text-white flex-1">{entity.name}</span>
+                <span className="font-medium text-gray-900 dark:text-white flex-1">{entity.name}<span className="block text-xs font-normal text-gray-500">{entityQualifier(entity)}</span></span>
                 <span
                   className="text-xs px-2 py-0.5 rounded-full text-white"
                   style={{ backgroundColor: ENTITY_TYPE_COLORS[entity.type] }}
@@ -153,7 +164,7 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
             <Input
               label="Name"
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              onChange={(e) => { setNewName(e.target.value); setDistinct(false); }}
               placeholder="e.g., King Hezekiah"
               autoFocus
             />
@@ -164,7 +175,7 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
                 value: t,
                 label: `${ENTITY_TYPE_ICONS[t]} ${ENTITY_TYPE_LABELS[t]}`,
               }))}
-              onChange={(e) => setNewType(e.target.value as EntityType)}
+              onChange={(e) => { setNewType(e.target.value as EntityType); setDistinct(false); }}
             />
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -178,11 +189,12 @@ export default function TagEntityModal({ open, onClose, onTag, existingEntityIds
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm resize-none"
               />
             </div>
+            {duplicate && <label className="flex gap-2 text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={distinct} onChange={e => setDistinct(e.target.checked)} />A record with this name exists. This is a different entity; the description distinguishes it.</label>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" size="sm" onClick={() => setShowCreateForm(false)}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={!newName.trim()}>
+              <Button type="submit" size="sm" disabled={busy || !newName.trim()}>
                 Create & Tag
               </Button>
             </div>

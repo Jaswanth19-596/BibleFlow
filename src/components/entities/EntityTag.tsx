@@ -1,3 +1,4 @@
+import { entityQualifier } from '@/lib/relationships';
 import { Entity } from '@/lib/types';
 import { ENTITY_TYPE_COLORS, ENTITY_TYPE_ICONS } from '@/lib/edgeTypes';
 
@@ -26,7 +27,7 @@ export default function EntityTag({ entity, onClick, onRemove, compact }: Entity
         e.stopPropagation();
         onClick?.(entity);
       }}
-      title={`${entity.type}: ${entity.name}`}
+      title={`${entity.type}: ${entity.name} — ${entityQualifier(entity)}`}
     >
       <span className={compact ? 'text-[9px]' : 'text-[11px]'}>{icon}</span>
       <span className="truncate max-w-[80px]">{entity.name}</span>

@@ -1,548 +1,204 @@
 import '@xyflow/react/dist/style.css';
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import {
-  ReactFlow,
-  Controls,
-  MiniMap,
-  Node,
-  Edge,
-  Connection,
-  useNodesState,
-  useEdgesState,
-  NodeTypes,
-  EdgeTypes,
-  ConnectionMode,
-} from '@xyflow/react';
+import './atlas.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactFlow, ReactFlowProvider, Controls, MiniMap, MarkerType, useNodesState, useReactFlow, useNodesInitialized, ConnectionMode, type Node, type Edge, type NodeChange } from '@xyflow/react';
 import { useSearchParams } from 'react-router-dom';
-import { usePeopleAtlas } from '@/hooks/usePeopleAtlas';
 import { useQuery } from '@tanstack/react-query';
-import { getEntityMentionsWithBooks } from '@/lib/supabase';
+import { usePeopleAtlas } from '@/hooks/usePeopleAtlas';
+import { useDebounce } from '@/hooks/useDebounce';
+import { getEntityMentionsWithBooks, type AtlasEntityMention } from '@/lib/supabase';
+import type { Entity, EntityRelationship, TimelinePeriod } from '@/lib/types';
+import { BUILTIN_DEFINITIONS, entityQualifier, errorMessage, formatEvidence, RELATIONSHIP_CATEGORIES, resolveDefinition, statement } from '@/lib/relationships';
+import { buildAtlasSearch, searchAtlas, type AtlasSearchItem } from '@/lib/atlasSearch';
+import { bundleRelationships, deriveFamilies, pairKey } from '@/lib/atlasGraph';
 import PersonNode from './PersonNode';
-import type { PersonNodeData } from './PersonNode';
+import FamilyJunctionNode from './FamilyJunctionNode';
 import RelationshipEdge from './RelationshipEdge';
 import TimelineBands from './TimelineBands';
 import CreatePeriodModal from './CreatePeriodModal';
-import CreatePersonModal from './CreatePersonModal';
-import EditRelationshipModal from './EditRelationshipModal';
-import { TimelinePeriod, Entity, EntityRelationship } from '@/lib/types';
+import CreatePersonModal, { type AtlasEntityInput } from './CreatePersonModal';
+import RelationshipEditor from './RelationshipEditor';
+import SetParentsModal from './SetParentsModal';
+import AtlasSearch from './AtlasSearch';
 
-const nodeTypes: NodeTypes = { person: PersonNode };
-const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
-
-const BAND_WIDTH = 4000;
-const DEFAULT_BAND_HEIGHT = 300;
-
-// Suggested relationship types for quick selection
-const QUICK_TYPES = [
-  'father of', 'mother of', 'son of', 'daughter of',
-  'married to', 'sibling of', 'king of', 'prophet to',
-];
-
-/** Given a Y position on the canvas, find which period it belongs to */
-function findPeriodForY(y: number, periods: TimelinePeriod[]): TimelinePeriod | null {
-  let cumY = 0;
-  for (const period of periods) {
-    const bh = period.band_height ?? DEFAULT_BAND_HEIGHT;
-    if (y < cumY + bh) return period;
-    cumY += bh;
-  }
-  // Beyond all bands — assign to last
-  return periods.length > 0 ? periods[periods.length - 1] : null;
+const nodeTypes = { person: PersonNode, family: FamilyJunctionNode };
+const edgeTypes = { relationship: RelationshipEdge };
+// Keep this stable so render updates do not overwrite an explicit search fit.
+const INITIAL_FIT_OPTIONS = { padding: .3, maxZoom: 1 };
+const EMPTY_IDS: string[] = [];
+const EMPTY_MENTIONS: AtlasEntityMention[] = [];
+function findPeriod(y: number, periods: TimelinePeriod[]) {
+  let bottom = 0;
+  return periods.find(p => { bottom += p.band_height ?? 300; return y < bottom; }) ?? periods[periods.length - 1];
 }
-
-export default function PeopleAtlas() {
-  const [searchParams] = useSearchParams();
-  const highlightId = searchParams.get('highlight');
-
-  const {
-    people,
-    relationships,
-    periods,
-    loading,
-    createRelationship,
-    updateRelationship,
-    deleteRelationship,
-    savePosition,
-    assignPeriod,
-    createPeriod,
-    updatePeriod,
-    deletePeriod,
-    reorderPeriods,
-    createEntity,
-    updateEntity,
-    deleteEntity,
-  } = usePeopleAtlas();
-
-  // Mention counts
-  const { data: mentions = [] } = useQuery({
-    queryKey: ['atlas-mentions'],
-    queryFn: getEntityMentionsWithBooks,
-  });
-
-  const mentionCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    mentions.forEach((m) => {
-      map.set(m.entity_id, (map.get(m.entity_id) || 0) + 1);
-    });
-    return map;
-  }, [mentions]);
-
-  const [showPeriodModal, setShowPeriodModal] = useState(false);
-  const [editingPeriod, setEditingPeriod] = useState<TimelinePeriod | null>(null);
-
-  const [showPersonModal, setShowPersonModal] = useState(false);
-  const [editingPerson, setEditingPerson] = useState<Entity | null>(null);
-
-  const [showEditRelModal, setShowEditRelModal] = useState(false);
-  const [editingRelationship, setEditingRelationship] = useState<EntityRelationship | null>(null);
-
-  // Pending connection — when user draws a line, we ask for the type inline
-  const [pendingConnection, setPendingConnection] = useState<{
-    source: string;
-    target: string;
-  } | null>(null);
-  const [pendingRelType, setPendingRelType] = useState('');
-  const relInputRef = useRef<HTMLInputElement>(null);
-
-  const peopleById = useMemo(() => new Map(people.map(p => [p.id, p])), [people]);
-
-  // Build nodes
-  const initialNodes = useMemo(() => {
-    return people.map((person) => ({
-      id: person.id,
-      type: 'person',
-      position: { x: person.atlas_x || 100, y: person.atlas_y || 100 },
-      data: {
-        entity: person,
-        mentionCount: mentionCounts.get(person.id) || 0,
-        period: periods.find((p) => p.id === person.timeline_period_id),
-        isHighlighted: person.id === highlightId,
-        onEdit: (entity: Entity) => {
-          setEditingPerson(entity);
-          setShowPersonModal(true);
-        },
-        onDelete: async (id: string) => {
-          if (window.confirm('Are you sure you want to delete this person and all their tags/relationships?')) {
-            await deleteEntity(id);
-          }
-        },
-      } as PersonNodeData,
-    }));
-  }, [people, periods, mentionCounts, highlightId]);
-
-  // Build edges
-  const initialEdges: Edge[] = useMemo(() => {
-    return relationships
-      .filter((r) => {
-        return peopleById.has(r.from_entity_id) &&
-               peopleById.has(r.to_entity_id);
-      })
-      .map((r) => {
-        const sourceNode = peopleById.get(r.from_entity_id);
-        const targetNode = peopleById.get(r.to_entity_id);
-        
-        const sourceY = sourceNode?.atlas_y || 0;
-        const targetY = targetNode?.atlas_y || 0;
-        const sourceX = sourceNode?.atlas_x || 0;
-        const targetX = targetNode?.atlas_x || 0;
-
-        const dx = Math.abs(targetX - sourceX);
-        const dy = Math.abs(targetY - sourceY);
-
-        let sourceHandle = 'source-bottom';
-        let targetHandle = 'target-top';
-
-        if (dx > dy) {
-          if (sourceX < targetX) {
-            sourceHandle = 'source-right';
-            targetHandle = 'target-left';
-          } else {
-            sourceHandle = 'source-left';
-            targetHandle = 'target-right';
-          }
-        } else {
-          if (sourceY < targetY) {
-            sourceHandle = 'source-bottom';
-            targetHandle = 'target-top';
-          } else {
-            sourceHandle = 'source-top';
-            targetHandle = 'target-bottom';
-          }
-        }
-
-        return {
-          id: r.id,
-          source: r.from_entity_id,
-          target: r.to_entity_id,
-          sourceHandle,
-          targetHandle,
-          type: 'relationship',
-          data: { 
-            type: r.type,
-            onEdit: () => {
-              setEditingRelationship(r);
-              setShowEditRelModal(true);
-            }
-          },
-        };
-      });
-  }, [relationships, people]);
-
+export default function PeopleAtlas() { return <ReactFlowProvider><Atlas /></ReactFlowProvider>; }
+function Atlas() {
+  const atlas = usePeopleAtlas();
+  const { entities, people, relationships, periods } = atlas;
+  const definitions = atlas.definitions ?? BUILTIN_DEFINITIONS;
+  const [params] = useSearchParams();
+  const [query, setQuery] = useState(''); const debouncedQuery = useDebounce(query, 180);
+  const [view, setView] = useState<'family' | 'relationships'>('family');
+  const [category, setCategory] = useState('*'); const [type, setType] = useState('*');
+  const [entityType, setEntityType] = useState('*'); const [period, setPeriod] = useState('*');
+  const [status, setStatus] = useState('*'); const [includeUndated, setIncludeUndated] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showRelated, setShowRelated] = useState(false); const [focus, setFocus] = useState(false);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [selectedRelationships, setSelectedRelationships] = useState<string[]>([]);
+  const [reveal, setReveal] = useState<{ ids: string[]; relationships: string[] } | null>(null);
+  const [expandedPair, setExpandedPair] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ initial?: EntityRelationship; source?: string; target?: string } | null>(null);
+  const [entityEditor, setEntityEditor] = useState<{ entity?: Entity } | null>(null);
+  const [parentsChild, setParentsChild] = useState<Entity | null>(null);
+  const [periodEditor, setPeriodEditor] = useState<{ period?: TimelinePeriod } | null>(null);
+  const [error, setError] = useState('');
+  const [pendingFocus, setPendingFocus] = useState<string[] | null>(null);
+  const flow = useReactFlow(); const initialized = useNodesInitialized();
+  const byId = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities]);
+  const selectedEntity = selectedEntityId ? byId.get(selectedEntityId) : undefined;
+  const { data: mentions = EMPTY_MENTIONS } = useQuery({ queryKey: ['atlas-mentions'], queryFn: getEntityMentionsWithBooks });
+  const mentionCounts = useMemo(() => { const counts = new Map<string, number>(); mentions.forEach(m => counts.set(m.entity_id, (counts.get(m.entity_id) ?? 0) + 1)); return counts; }, [mentions]);
+  const index = useMemo(() => buildAtlasSearch(entities, relationships, definitions), [entities, relationships, definitions]);
+  const results = useMemo(() => searchAtlas(index, debouncedQuery), [index, debouncedQuery]);
+  const searchIds = useMemo(() => new Set(results.flatMap(r => r.entityIds)), [results]);
+  const neighborhood = useMemo(() => {
+    const ids = new Set(selectedEntityId ? [selectedEntityId] : []);
+    for (const r of relationships) if ([r.from_entity_id, r.to_entity_id].includes(selectedEntityId ?? '')) { ids.add(r.from_entity_id); ids.add(r.to_entity_id); }
+    return ids;
+  }, [relationships, selectedEntityId]);
+  const filtered = useMemo(() => relationships.filter(r => {
+    const d = resolveDefinition(r, definitions), meta = r.metadata;
+    return (view !== 'family' || d.category === 'family') && (category === '*' || d.category === category) && (type === '*' || d.id === type)
+      && (status === '*' || (meta?.status ?? 'unspecified') === status)
+      && (period === '*' || meta?.period_id === period || (!meta?.period_id && includeUndated))
+      && (entityType === '*' || byId.get(r.from_entity_id)?.type === entityType || byId.get(r.to_entity_id)?.type === entityType)
+      && (!focus || !selectedEntityId || (neighborhood.has(r.from_entity_id) && neighborhood.has(r.to_entity_id)));
+  }), [relationships, definitions, view, category, type, status, period, includeUndated, entityType, byId, focus, selectedEntityId, neighborhood]);
+  const visibleEntities = useMemo(() => {
+    const endpointIds = new Set(filtered.flatMap(r => [r.from_entity_id, r.to_entity_id]));
+    const scoped = category !== '*' || type !== '*' || status !== '*' || period !== '*' || entityType !== '*';
+    return entities.filter(e => reveal?.ids.includes(e.id) || (
+      (!focus || !selectedEntityId || neighborhood.has(e.id)) && (!scoped || endpointIds.has(e.id))
+      && (e.type === 'person' || showRelated || (neighborhood.has(e.id) && endpointIds.has(e.id)))
+    ));
+  }, [entities, filtered, category, type, status, period, entityType, reveal, focus, selectedEntityId, neighborhood, showRelated]);
+  const visibleIds = useMemo(() => new Set(visibleEntities.map(e => e.id)), [visibleEntities]);
+  const visibleRelationships = useMemo(() => {
+    const ids = new Set(filtered.map(r => r.id));
+    return relationships.filter(r => (ids.has(r.id) || reveal?.relationships.includes(r.id)) && visibleIds.has(r.from_entity_id) && visibleIds.has(r.to_entity_id));
+  }, [relationships, filtered, reveal, visibleIds]);
+  const inspectEntity = useCallback((entity: Entity) => { setSelectedEntityId(entity.id); setSelectedRelationships([]); }, []);
+  const initialNodes: Node[] = useMemo(() => visibleEntities.map(entity => ({
+    id: entity.id, type: 'person', position: { x: entity.atlas_x ?? 100, y: entity.atlas_y ?? 100 },
+    data: { entity, mentionCount: mentionCounts.get(entity.id) ?? 0, isHighlighted: entity.id === selectedEntityId || (!!debouncedQuery && searchIds.has(entity.id)), onClick: inspectEntity },
+  })), [visibleEntities, mentionCounts, selectedEntityId, debouncedQuery, searchIds, inspectEntity]);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  const nodesKey = useMemo(
-    () => people.map((p) => `${p.id}:${p.atlas_x}:${p.atlas_y}:${p.timeline_period_id}`).join(','),
-    [people]
-  );
-  const edgesKey = useMemo(
-    () => relationships.map((r) => r.id).join(','),
-    [relationships]
-  );
-  useEffect(() => { setNodes(initialNodes); }, [nodesKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setEdges(initialEdges); }, [edgesKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Focus the inline input when a pending connection is set
-  useEffect(() => {
-    if (pendingConnection && relInputRef.current) {
-      relInputRef.current.focus();
+  useEffect(() => { setNodes(previous => {
+    const current = new Map(previous.map(n => [n.id, n]));
+    return initialNodes.map(n => { const old = current.get(n.id); return old ? { ...old, ...n, position: old.dragging ? old.position : n.position } : n; });
+  }); }, [initialNodes, setNodes]);
+  const openRelationships = useCallback((ids: string[]) => { setSelectedRelationships(ids); setSelectedEntityId(null); }, []);
+  const families = useMemo(() => view === 'family' ? deriveFamilies(visibleEntities, visibleRelationships, definitions) : [], [view, visibleEntities, visibleRelationships, definitions]);
+  const graph = useMemo(() => {
+    const positioned = new Map(nodes.map(n => [n.id, n]));
+    const familyNodes: Node[] = [], edges: Edge[] = [];
+    const grouped = new Set<string>();
+    const handles = (source: string, target: string) => {
+      const a = positioned.get(source), b = positioned.get(target);
+      if (!a || !b) return {};
+      const dx = b.position.x - a.position.x, dy = b.position.y - a.position.y;
+      if (Math.abs(dx) > Math.abs(dy)) return { sourceHandle: dx >= 0 ? 'source-right' : 'source-left', targetHandle: dx >= 0 ? 'target-left' : 'target-right' };
+      return { sourceHandle: dy >= 0 ? 'source-bottom' : 'source-top', targetHandle: dy >= 0 ? 'target-top' : 'target-bottom' };
+    };
+    for (const family of families) {
+      const parents = family.parents.map(id => positioned.get(id));
+      if (parents.some(n => !n)) continue;
+      const parentNodes = parents as Node[];
+      const x = parentNodes.reduce((sum, n) => sum + n.position.x + (n.measured?.width ?? 220) / 2, 0) / 2 - 14;
+      const y = Math.max(...parentNodes.map(n => n.position.y + (n.measured?.height ?? 90))) + 38;
+      const context = JSON.parse(family.context) as string[];
+      const label = `Shared parents · ${context[0]}${context[1] ? ` · ${periods.find(p => p.id === context[1])?.name ?? 'period'}` : ''}`;
+      familyNodes.push({ id: family.id, type: 'family', position: { x, y }, width: 28, height: 28, measured: { width: 28, height: 28 }, draggable: false, selectable: true, connectable: false, data: { label, onClick: () => openRelationships(family.relationshipIds) } });
+      for (const parent of family.parents) edges.push({ id: `${family.id}:parent:${parent}`, source: parent, target: family.id, sourceHandle: 'source-bottom', targetHandle: 'target-top', type: 'relationship', data: { family: true, color: RELATIONSHIP_CATEGORIES.family.color, highlighted: family.relationshipIds.some(id => selectedRelationships.includes(id)), onEdit: () => openRelationships(family.relationshipIds) } });
+      for (const child of family.children) edges.push({ id: `${family.id}:child:${child}`, source: family.id, target: child, sourceHandle: 'source-bottom', targetHandle: 'target-top', type: 'relationship', data: { family: true, color: RELATIONSHIP_CATEGORIES.family.color, highlighted: family.relationshipIds.some(id => selectedRelationships.includes(id)), onEdit: () => openRelationships(family.relationshipIds.filter(id => { const r = visibleRelationships.find(r => r.id === id); return r && [r.from_entity_id, r.to_entity_id].includes(child); })) } });
+      family.relationshipIds.forEach(id => grouped.add(id));
     }
-  }, [pendingConnection]);
-
-  const onNodeDragStop = useCallback(
-    (_: any, node: Node) => {
-      savePosition(node.id, node.position.x, node.position.y);
-      if (periods.length > 0) {
-        const targetPeriod = findPeriodForY(node.position.y, periods);
-        if (targetPeriod) {
-          const person = people.find((p) => p.id === node.id);
-          if (person && person.timeline_period_id !== targetPeriod.id) {
-            assignPeriod(node.id, targetPeriod.id);
-          }
-        }
+    for (const bundle of bundleRelationships(visibleRelationships.filter(r => !grouped.has(r.id)))) {
+      if (bundle.items.length > 1 && expandedPair !== bundle.id) {
+        const r = bundle.items[0]; edges.push({ id: `bundle:${encodeURIComponent(bundle.id)}`, source: r.from_entity_id, target: r.to_entity_id, ...handles(r.from_entity_id, r.to_entity_id), type: 'relationship', data: { label: `${bundle.items.length} relationships`, onEdit: () => { setExpandedPair(bundle.id); openRelationships(bundle.items.map(r => r.id)); } } }); continue;
       }
-    },
-    [savePosition, periods, people, assignPeriod]
-  );
-
-  // When user draws a connection between two person nodes
-  const onConnect = useCallback((connection: Connection) => {
-    if (connection.source && connection.target && connection.source !== connection.target) {
-      // Check if relationship already exists between these two
-      const exists = relationships.some(
-        (r) =>
-          (r.from_entity_id === connection.source && r.to_entity_id === connection.target) ||
-          (r.from_entity_id === connection.target && r.to_entity_id === connection.source)
-      );
-      if (!exists) {
-        setPendingConnection({
-          source: connection.source,
-          target: connection.target,
-        });
-        setPendingRelType('');
-      }
-    }
-  }, [relationships]);
-
-  // Confirm the pending relationship
-  const confirmRelationship = useCallback(async (typeStr: string) => {
-    if (!pendingConnection || !typeStr.trim()) return;
-    await createRelationship({
-      from_entity_id: pendingConnection.source,
-      to_entity_id: pendingConnection.target,
-      type: typeStr.trim().toLowerCase().replace(/\s+/g, '-'),
-      description: '',
-    });
-    setPendingConnection(null);
-    setPendingRelType('');
-  }, [pendingConnection, createRelationship]);
-
-  const cancelPendingConnection = useCallback(() => {
-    setPendingConnection(null);
-    setPendingRelType('');
-  }, []);
-
-  const handleCreatePerson = async (data: { name: string; description: string; color: string }) => {
-    if (editingPerson) {
-      await updateEntity(editingPerson.id, data);
-    } else {
-      await createEntity({
-        ...data,
-        type: 'person',
-        metadata: {},
-        timeline_period_id: null,
-        atlas_x: 100 + Math.random() * 50,
-        atlas_y: 100 + Math.random() * 50,
+      bundle.items.forEach((r, i) => {
+        const def = resolveDefinition(r, definitions), color = RELATIONSHIP_CATEGORIES[def.category].color;
+        edges.push({ id: r.id, source: r.from_entity_id, target: r.to_entity_id, ...handles(r.from_entity_id, r.to_entity_id), type: 'relationship', selected: selectedRelationships.includes(r.id), markerEnd: def.symmetric ? undefined : { type: MarkerType.ArrowClosed, color },
+          data: { label: def.label, color, status: r.metadata?.status, offset: (i - (bundle.items.length - 1) / 2) * 55, highlighted: selectedRelationships.includes(r.id), onEdit: () => openRelationships([r.id]) } });
       });
     }
+    return { nodes: [...nodes, ...familyNodes], edges };
+  }, [nodes, families, periods, openRelationships, visibleRelationships, definitions, expandedPair, selectedRelationships]);
+  const selectResult = useCallback((item: AtlasSearchItem) => {
+    if (item.kind === 'Relationship type') { setType(item.type ?? '*'); setView('relationships'); setCategory('*'); return; }
+    setReveal({ ids: item.entityIds, relationships: item.relationshipId ? [item.relationshipId] : EMPTY_IDS });
+    setPendingFocus(item.entityIds);
+    if (item.relationshipId) { const rel = relationships.find(r => r.id === item.relationshipId); if (rel) setExpandedPair(pairKey(rel.from_entity_id, rel.to_entity_id)); openRelationships([item.relationshipId]); }
+    else { setSelectedEntityId(item.entityIds[0]); setSelectedRelationships([]); }
+  }, [relationships, openRelationships]);
+  const handledHighlight = useRef<string | null>(null);
+  const highlight = params.get('highlight');
+  useEffect(() => { if (!highlight) handledHighlight.current = null; if (highlight && handledHighlight.current !== highlight && byId.has(highlight)) { handledHighlight.current = highlight; setReveal({ ids: [highlight], relationships: [] }); setSelectedEntityId(highlight); setPendingFocus([highlight]); } }, [highlight, byId]);
+  useEffect(() => {
+    if (!pendingFocus || !initialized || !pendingFocus.every(id => nodes.some(n => n.id === id))) return;
+    const frame = requestAnimationFrame(() => { flow.fitView({ nodes: pendingFocus.map(id => ({ id })), padding: .65, maxZoom: 1.1, duration: 300 }); setPendingFocus(null); });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingFocus, initialized, nodes, flow]);
+  const saveEntity = async (data: AtlasEntityInput) => {
+    if (entityEditor?.entity) await atlas.updateEntity(entityEditor.entity.id, data);
+    else await atlas.createEntity({ ...data, timeline_period_id: null, atlas_x: 100, atlas_y: 100 });
   };
-
-  const handleUpdateRelationship = async (updates: { type: string; description: string }) => {
-    if (editingRelationship) {
-      await updateRelationship(editingRelationship.id, updates);
-    }
+  const persistDrag = async (_event: unknown, node: Node) => {
+    if (!byId.has(node.id)) return;
+    try { await atlas.savePosition(node.id, node.position.x, node.position.y); const p = findPeriod(node.position.y, periods); const entity = byId.get(node.id); if (p && entity?.type === 'person' && entity.timeline_period_id !== p.id) await atlas.assignPeriod(node.id, p.id); } catch (e) { setError(errorMessage(e)); }
   };
-
-  const handleDeleteRelationship = async () => {
-    if (editingRelationship) {
-      await deleteRelationship(editingRelationship.id);
-    }
-  };
-
-  const onEdgeClick = useCallback((_: any, _edge: Edge) => {
-    // Could show a delete confirmation — for now, just select it
-  }, []);
-
-  const handleCreatePeriod = async (data: { name: string; color: string; sort_order: number }) => {
-    await createPeriod({ ...data, band_height: DEFAULT_BAND_HEIGHT });
-  };
-
-  const handleEditPeriod = (period: TimelinePeriod) => {
-    setEditingPeriod(period);
-    setShowPeriodModal(true);
-  };
-
-  const handleUpdatePeriod = async (data: { name: string; color: string; sort_order: number }) => {
-    if (editingPeriod) {
-      await updatePeriod(editingPeriod.id, data);
-      setEditingPeriod(null);
-    } else {
-      await createPeriod({ ...data, band_height: DEFAULT_BAND_HEIGHT });
-    }
-  };
-
-  const handleDeletePeriod = async (id: string) => {
-    await deletePeriod(id);
-    setEditingPeriod(null);
-  };
-
-  const handleResizePeriod = useCallback(async (periodId: string, newHeight: number) => {
-    await updatePeriod(periodId, { band_height: newHeight });
-  }, [updatePeriod]);
-
-  const handleReorderPeriods = useCallback(async (orderedIds: { id: string; sort_order: number }[]) => {
-    await reorderPeriods(orderedIds);
-  }, [reorderPeriods]);
-
-  // Get names for pending connection display
-  const sourceName = pendingConnection
-    ? people.find((p) => p.id === pendingConnection.source)?.name || ''
-    : '';
-  const targetName = pendingConnection
-    ? people.find((p) => p.id === pendingConnection.target)?.name || ''
-    : '';
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Loading People Atlas...</p>
-        </div>
+  const selectedItems = selectedEntity ? relationships.filter(r => r.from_entity_id === selectedEntity.id || r.to_entity_id === selectedEntity.id) : relationships.filter(r => selectedRelationships.includes(r.id));
+  const usedDefinitions = definitions.filter(d => relationships.some(r => resolveDefinition(r, definitions).id === d.id));
+  const customUsed = relationships.map(r => resolveDefinition(r, definitions)).filter(d => !definitions.some(known => known.id === d.id)).filter((d, i, all) => all.findIndex(x => x.id === d.id) === i);
+  const hasFilters = category !== '*' || type !== '*' || entityType !== '*' || period !== '*' || status !== '*';
+  const resetFilters = () => { setCategory('*'); setType('*'); setEntityType('*'); setPeriod('*'); setStatus('*'); setIncludeUndated(true); };
+  return <div className="atlas-workspace">
+    <header className="atlas-toolbar">
+      <div className="atlas-title-row"><div><h1>People & relationships</h1><p className="atlas-help">{people.length} people · {relationships.length} recorded relationships · {visibleRelationships.length} visible</p></div><div className="flex flex-wrap gap-2"><button className="atlas-button" onClick={() => setEntityEditor({})}>Add entity</button><button className="atlas-button atlas-primary" onClick={() => setEditor({ source: selectedEntityId ?? undefined })}>Add relationship</button><details className="atlas-period-menu"><summary className="atlas-button">Periods</summary><div className="atlas-period-list">{periods.map(p => <button key={p.id} className="atlas-button" onClick={() => setPeriodEditor({ period: p })}>{p.name}</button>)}<button className="atlas-button" onClick={() => setPeriodEditor({})}>Add period</button></div></details></div></div>
+      <div className="atlas-tools-row"><div className="atlas-view-switch" aria-label="Atlas view">{(['family','relationships'] as const).map(v => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'family' ? 'Family view' : 'All relationships'}</button>)}</div><button className="atlas-button atlas-filter-toggle" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(open => !open)}>Filters{hasFilters ? ' · active' : ''}</button><AtlasSearch query={query} onQuery={setQuery} results={query === debouncedQuery ? results : []} pending={query !== debouncedQuery} onSelect={selectResult} /></div>
+      <div className={`atlas-filters ${filtersOpen ? 'is-open' : ''}`}>
+        <label>Category<select aria-label="Filter by category" value={category} onChange={e => setCategory(e.target.value)}><option value="*">All categories</option>{Object.entries(RELATIONSHIP_CATEGORIES).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}</select></label>
+        <label>Relationship<select aria-label="Filter by relationship" value={type} onChange={e => setType(e.target.value)}><option value="*">All types</option>{[...usedDefinitions, ...customUsed].map(d => <option key={d.id} value={d.id}>{d.label}</option>)}</select></label>
+        <details className="atlas-more-filters"><summary>More filters{hasFilters ? ' · active' : ''}</summary><div className="atlas-extra-filters"><label>Entity type<select value={entityType} onChange={e => { setEntityType(e.target.value); setShowRelated(true); }}><option value="*">All entity types</option>{['person','place','nation','event','object','concept'].map(t => <option key={t}>{t}</option>)}</select></label><label>Period<select value={period} onChange={e => setPeriod(e.target.value)}><option value="*">All periods</option>{periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Status<select value={status} onChange={e => setStatus(e.target.value)}><option value="*">All statuses</option>{['unspecified','explicit','inferred','disputed'].map(s => <option key={s}>{s}</option>)}</select></label><label className="flex gap-2"><input type="checkbox" checked={includeUndated} onChange={e => setIncludeUndated(e.target.checked)} />Include undated</label></div></details>
+        <label className="atlas-check"><input type="checkbox" checked={showRelated} onChange={e => setShowRelated(e.target.checked)} />Related entities</label>
+        {hasFilters && <button className="atlas-link" onClick={resetFilters}>Clear filters</button>}
+        <button className="atlas-link ml-auto" onClick={() => flow.fitView({ padding: .3, maxZoom: 1, duration: 300 })}>Fit visible</button>
       </div>
-    );
-  }
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Toolbar */}
-      <div className="px-3 py-2.5 sm:px-4 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-white dark:bg-gray-800 z-10">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-            People Atlas
-          </h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {people.length} people · {relationships.length} relationships · {periods.length} periods
-            {people.length > 0 && (
-              <span className="hidden sm:inline ml-2 text-gray-400 dark:text-gray-500">
-                — drag between people to connect them
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-          <button
-            onClick={() => { setEditingPerson(null); setShowPersonModal(true); }}
-            className="min-h-11 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            + Person
-          </button>
-          <button
-            onClick={() => { setEditingPeriod(null); setShowPeriodModal(true); }}
-            className="min-h-11 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            + Period
-          </button>
-        </div>
+    </header>
+    {!atlas.loading && !atlas.schemaReady && !atlas.error && <p className="atlas-notice">Existing relationships are available. To save the new relationship details and shared parents, apply database migration 010.</p>}
+    {(atlas.error || error) && <div className="atlas-error flex justify-between" role="alert"><span>{error || errorMessage(atlas.error)}</span><button onClick={() => { setError(''); atlas.retry(); }} className="atlas-link">Retry</button></div>}
+    {reveal && <div className="atlas-reveal"><span>Selected result is revealed. Your filters are preserved.</span><button className="atlas-link" onClick={() => setReveal(null)}>Restore view</button></div>}
+    <div className="atlas-stage">
+      <div className="atlas-canvas">
+        {atlas.loading ? <p className="atlas-empty" role="status">Loading relationships…</p> : <ReactFlow nodes={graph.nodes} edges={graph.edges} onNodesChange={(changes: NodeChange[]) => { const relevant = changes.filter(c => !('id' in c) || !c.id.startsWith('family:')); if (relevant.length) onNodesChange(relevant); }} onNodeDragStop={persistDrag} onConnect={connection => { if (connection.source && connection.target && connection.source !== connection.target && byId.has(connection.source) && byId.has(connection.target)) setEditor({ source: connection.source, target: connection.target }); }} onEdgeClick={(_event, edge) => (edge.data?.onEdit as (() => void) | undefined)?.()} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} deleteKeyCode={null} fitView fitViewOptions={INITIAL_FIT_OPTIONS} minZoom={.1} maxZoom={2} panOnScroll proOptions={{ hideAttribution: true }}>
+          <TimelineBands periods={periods} bandWidth={8000} onResizePeriod={(id, height) => { atlas.updatePeriod(id, { band_height: height }).catch(e => setError(errorMessage(e))); }} /><Controls position="bottom-left" />{!selectedEntity && selectedRelationships.length === 0 && <MiniMap position="bottom-right" nodeColor={node => String((node.data.entity as Entity | undefined)?.color ?? '#7c59a4')} />}
+        </ReactFlow>}
+        {!atlas.loading && !visibleEntities.length && <div className="atlas-empty"><h2>{entities.length ? 'No entities in this view' : 'Start your relationship atlas'}</h2><p>{entities.length ? 'Change the filters, use search, or switch to All relationships.' : 'Add a person or another entity, then connect them.'}</p><button className="atlas-button" onClick={() => entities.length ? (resetFilters(), setView('relationships'), setShowRelated(true)) : setEntityEditor({})}>{entities.length ? 'Show all entities' : 'Add entity'}</button></div>}
+        <div className="atlas-legend">{Object.values(RELATIONSHIP_CATEGORIES).filter(c => view !== 'family' || c.label === 'Family').map(c => <span key={c.label}><i style={{ backgroundColor: c.color }} />{c.label}</span>)}<span>Dashed: inferred or disputed</span></div>
       </div>
-
-      {/* Canvas */}
-      <div className="flex-1 relative">
-        {people.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-sm">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                </svg>
-              </div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                No people tagged yet
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Go to a topic, add verses, and tag people on them. They will appear here.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeDragStop={onNodeDragStop}
-            onConnect={onConnect}
-            onEdgeClick={onEdgeClick}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            connectionMode={ConnectionMode.Loose}
-            panOnScroll={true}
-            selectionOnDrag={false}
-            panOnDrag={true}
-            fitView
-            fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
-            minZoom={0.1}
-            maxZoom={2}
-            proOptions={{ hideAttribution: true }}
-          >
-            <TimelineBands
-              periods={periods}
-              bandWidth={BAND_WIDTH}
-              onResizePeriod={handleResizePeriod}
-            />
-            <Controls position="bottom-right" />
-            <MiniMap
-              nodeColor={(node: Node) => {
-                const data = node.data as unknown as PersonNodeData;
-                return data?.entity?.color || '#6366f1';
-              }}
-              maskColor="rgba(0,0,0,0.1)"
-              position="bottom-left"
-            />
-          </ReactFlow>
-        )}
-
-        {/* Period list sidebar — click to edit */}
-        {periods.length > 0 && (
-          <div className="absolute right-3 top-3 z-10 space-y-1 max-w-[132px] sm:right-4 sm:top-4 sm:max-w-[160px]">
-            {[...periods]
-              .sort((a, b) => a.sort_order - b.sort_order)
-              .map((period) => (
-                <button
-                  key={period.id}
-                  onClick={() => handleEditPeriod(period)}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/90 dark:bg-gray-800/90 backdrop-blur border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-all text-left"
-                >
-                  <div
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: period.color }}
-                  />
-                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                    {period.name}
-                  </span>
-                  {/* Height hint */}
-                  <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">
-                    {period.band_height ?? DEFAULT_BAND_HEIGHT}px
-                  </span>
-                </button>
-              ))}
-          </div>
-        )}
-
-        {/* Inline relationship type prompt — appears when you draw a connection */}
-        {pendingConnection && (
-          <div className="absolute inset-0 z-40 flex items-end justify-center bg-black/20 sm:items-center">
-            <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] w-full max-w-sm animate-atlas-expand">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                <span className="font-semibold text-gray-900 dark:text-white">{sourceName}</span>
-                {' → '}
-                <span className="font-semibold text-gray-900 dark:text-white">{targetName}</span>
-              </p>
-
-              {/* Quick type buttons */}
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {QUICK_TYPES.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => confirmRelationship(t)}
-                    className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors"
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-
-              {/* Custom type input */}
-              <form
-                onSubmit={(e) => { e.preventDefault(); confirmRelationship(pendingRelType); }}
-                className="flex items-center gap-2"
-              >
-                <input
-                  ref={relInputRef}
-                  type="text"
-                  value={pendingRelType}
-                  onChange={(e) => setPendingRelType(e.target.value)}
-                  placeholder="or type a custom relationship..."
-                  className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-                <button
-                  type="submit"
-                  disabled={!pendingRelType.trim()}
-                  className="px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Save
-                </button>
-              </form>
-
-              <button
-                onClick={cancelPendingConnection}
-                className="mt-2 w-full text-center text-xs text-gray-400 hover:text-gray-600 py-1"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Modals */}
-      <CreatePeriodModal
-        open={showPeriodModal}
-        onClose={() => { setShowPeriodModal(false); setEditingPeriod(null); }}
-        onSubmit={editingPeriod ? handleUpdatePeriod : handleCreatePeriod}
-        nextSortOrder={periods.length}
-        editingPeriod={editingPeriod}
-        onDelete={handleDeletePeriod}
-        allPeriods={periods}
-        onReorder={handleReorderPeriods}
-      />
-      
-      <CreatePersonModal
-        open={showPersonModal}
-        onClose={() => { setShowPersonModal(false); setEditingPerson(null); }}
-        onSubmit={handleCreatePerson}
-        editingPerson={editingPerson}
-      />
-
-      <EditRelationshipModal
-        open={showEditRelModal}
-        onClose={() => { setShowEditRelModal(false); setEditingRelationship(null); }}
-        onSubmit={handleUpdateRelationship}
-        onDelete={handleDeleteRelationship}
-        relationship={editingRelationship}
-        sourceName={editingRelationship ? people.find((p) => p.id === editingRelationship.from_entity_id)?.name : ''}
-        targetName={editingRelationship ? people.find((p) => p.id === editingRelationship.to_entity_id)?.name : ''}
-      />
+      {(selectedEntity || selectedRelationships.length > 0) && <aside className="atlas-details" aria-label="Relationship details">
+        <div className="flex items-start justify-between gap-2"><div><h2>{selectedEntity?.name ?? 'Relationship details'}</h2>{selectedEntity && <p className="atlas-help">{entityQualifier(selectedEntity)}</p>}</div><button className="atlas-button" aria-label="Close relationship details" onClick={() => { setSelectedEntityId(null); setSelectedRelationships([]); setFocus(false); }}>×</button></div>
+        {selectedEntity && <><div className="flex flex-wrap gap-2 mt-3"><button className="atlas-button" onClick={() => setEditor({ source: selectedEntity.id })}>Add relationship</button>{selectedEntity.type === 'person' && <button className="atlas-button" onClick={() => setParentsChild(selectedEntity)}>Set parents</button>}<button className="atlas-button" onClick={() => setEntityEditor({ entity: selectedEntity })}>Edit entity</button></div><label className="atlas-check my-3"><input type="checkbox" checked={focus} onChange={e => setFocus(e.target.checked)} />Focus on immediate connections</label>{selectedEntity.description && <p className="text-sm my-3">{selectedEntity.description}</p>}</>}
+        {expandedPair && <button className="atlas-link mt-3" onClick={() => setExpandedPair(null)}>Collapse connection labels</button>}<p className="atlas-help mt-4">{selectedItems.length} recorded {selectedItems.length === 1 ? 'relationship' : 'relationships'}</p>
+        <div className="atlas-assertions">{selectedItems.map(r => <article key={r.id}><button className="atlas-statement-button" onClick={() => selectResult({ id: r.id, kind: 'Relationship', title: '', detail: '', text: '', names: [], entityIds: [r.from_entity_id, r.to_entity_id], relationshipId: r.id })}>{statement(r, byId, definitions)}</button><p className="atlas-help">{r.metadata?.status ?? 'unspecified'} · {r.metadata?.period_id ? periods.find(p => p.id === r.metadata?.period_id)?.name ?? 'Period removed' : 'Undated'}{r.metadata?.lineage_scope ? ` · ${r.metadata.lineage_scope}` : ''}{r.metadata?.parentage ? ` · ${r.metadata.parentage}` : ''}{!visibleRelationships.some(v => v.id === r.id) ? ' · hidden in current view' : ''}</p>{r.description && <p className="text-sm my-2">{r.description}</p>}{(r.evidence ?? []).map((e, i) => <p className="atlas-evidence" key={e.id ?? i}>{formatEvidence(e)}{e.note ? ` — ${e.note}` : ''}</p>)}<button className="atlas-link mt-2" onClick={() => setEditor({ initial: r })}>Edit relationship & evidence</button></article>)}</div>
+        {selectedEntity && <button className="atlas-link mt-5 text-red-700" onClick={async () => { if (!window.confirm(`Delete ${selectedEntity.name} and all their tags and relationships?`)) return; try { await atlas.deleteEntity(selectedEntity.id); setSelectedEntityId(null); } catch (e) { setError(errorMessage(e)); } }}>Delete entity</button>}
+      </aside>}
     </div>
-  );
+    {editor && <RelationshipEditor key={editor.initial?.id ?? `${editor.source}:${editor.target}`} entities={entities} relationships={relationships} definitions={definitions} periods={periods} {...editor} onClose={() => setEditor(null)} onSave={async draft => { const id = await atlas.saveRelationship(draft); const ids = [draft.from_entity_id, draft.to_entity_id]; setReveal({ ids, relationships: [id] }); setPendingFocus(ids); setSelectedEntityId(null); setSelectedRelationships([id]); setExpandedPair(pairKey(draft.from_entity_id, draft.to_entity_id)); }} onDelete={atlas.deleteRelationship} />}
+    {parentsChild && <SetParentsModal child={parentsChild} entities={entities} periods={periods} onClose={() => setParentsChild(null)} onSave={atlas.setParents} />}
+    <CreatePersonModal open={!!entityEditor} editingPerson={entityEditor?.entity} entities={entities} onClose={() => setEntityEditor(null)} onSubmit={saveEntity} />
+    <CreatePeriodModal key={periodEditor?.period?.id ?? (periodEditor ? 'new-open' : 'closed')} open={!!periodEditor} editingPeriod={periodEditor?.period} onClose={() => setPeriodEditor(null)} nextSortOrder={periods.length} allPeriods={periods} onSubmit={async data => { if (periodEditor?.period) await atlas.updatePeriod(periodEditor.period.id, data); else await atlas.createPeriod({ ...data, band_height: 300 }); }} onDelete={atlas.deletePeriod} onReorder={atlas.reorderPeriods} />
+  </div>;
 }

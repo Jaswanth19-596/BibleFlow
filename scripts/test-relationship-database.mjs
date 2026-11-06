@@ -1,0 +1,57 @@
+// Disposable local PostgreSQL only. Never connects to the configured Supabase project.
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=mkdtempSync('/private/tmp/bibleflow-pg-'); const data=path.join(root,'data'); let started=false;
+const run=(bin,args,input)=>execFileSync(bin,args,{input,encoding:'utf8',stdio:['pipe','pipe','pipe']});
+const sql=text=>run('psql',['-h',root,'-p','55439','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-At'],text).trim();
+const reject=(text,pattern)=>{assert.throws(()=>sql(text),pattern);};
+try {
+  run('initdb',['-D',data,'-U','postgres','-A','trust','--no-locale']);
+  run('pg_ctl',['-D',data,'-l',path.join(root,'server.log'),'-o',`-k ${root} -h '' -p 55439 -c wal_level=logical`,'-w','start']); started=true;
+  sql('CREATE ROLE anon; CREATE ROLE authenticated; CREATE PUBLICATION supabase_realtime;');
+  for(const file of ['001_initial_schema.sql','003_entities.sql','004_people_atlas.sql','005_remove_relationship_type_check.sql','007_relationship_sort_order.sql','010_relationship_atlas.sql']) sql(readFileSync(path.join('supabase/migrations',file),'utf8'));
+  assert.equal(sql('SELECT count(*) FROM relationship_definitions'),'31');
+  const ids=sql("INSERT INTO entities(name,type) VALUES('Parent A','person'),('Parent B','person'),('Child','person'),('Other child','person') RETURNING id").split('\n').filter(s=>/^[a-f0-9-]{36}$/.test(s));
+  const [a,b,child,other]=ids;
+  const literal=value=>`'${JSON.stringify(value).replaceAll("'","''")}'::jsonb`;
+  const draft={from_entity_id:a,to_entity_id:child,type:'son of',description:'legacy note',category:'family',symmetric:false,metadata:{},evidence:[{book:'2 Samuel',chapter:21,verse_start:8,verse_end:null,note:'keep this evidence'}]};
+  const save=value=>sql(`SELECT atlas_save_relationship(${literal(value)})`);
+  const id=save({...draft,from_entity_id:child,to_entity_id:a});
+  sql(`SELECT atlas_set_parents('${child}',ARRAY['${a}','${b}']::uuid[],'unspecified',NULL)`);
+  assert.equal(sql(`SELECT count(*) FROM entity_relationships WHERE metadata->>'lineage_scope'='direct'`),'2');
+  assert.equal(sql(`SELECT note FROM relationship_evidence WHERE relationship_id='${id}'`),'keep this evidence');
+  assert.equal(sql(`SELECT description FROM entity_relationships WHERE id='${id}'`),'legacy note');
+  sql(`SELECT atlas_set_parents('${child}',ARRAY['${a}','${b}']::uuid[],'unspecified',NULL)`);
+  assert.equal(sql('SELECT count(*) FROM entity_relationships'),'2');
+  reject(`SELECT atlas_set_parents('${a}',ARRAY['${child}']::uuid[],'unspecified',NULL)`,/ancestry cycle/);
+  const before=sql('SELECT count(*) FROM entity_relationships');
+  reject(`SELECT atlas_set_parents('${other}',ARRAY['${a}','00000000-0000-0000-0000-000000000099']::uuid[],'unspecified',NULL)`,/Choose people/);
+  assert.equal(sql('SELECT count(*) FROM entity_relationships'),before,'second-parent failure must roll back first parent');
+  reject(`SELECT atlas_set_parents('${child}',ARRAY['${a}','${a}']::uuid[],'unspecified',NULL)`,/different parents/);
+  const customId=save({...draft,from_entity_id:a,to_entity_id:b,type:'keeper of the gate',category:'other',evidence:[]});
+  assert.equal(sql(`SELECT label FROM relationship_definitions WHERE id=(SELECT definition_id FROM entity_relationships WHERE id='${customId}')`),'keeper of the gate');
+  const spouse={...draft,from_entity_id:a,to_entity_id:b,type:'married to',evidence:[]};save(spouse);
+  reject(`SELECT atlas_save_relationship(${literal({...spouse,from_entity_id:b,to_entity_id:a})})`,/already exists/);
+  const inverse={...draft,from_entity_id:a,to_entity_id:other,type:'mentor of',evidence:[]};save(inverse);
+  reject(`SELECT atlas_save_relationship(${literal({...inverse,from_entity_id:other,to_entity_id:a,type:'disciple of'})})`,/already exists/);
+  reject(`SELECT atlas_save_relationship(${literal({...draft,id,from_entity_id:child,to_entity_id:a,description:'must roll back',evidence:[{book:'John',chapter:0,verse_start:1,note:''}]})})`,/check constraint/);
+  assert.equal(sql(`SELECT description FROM entity_relationships WHERE id='${id}'`),'legacy note');
+  assert.equal(sql(`SELECT note FROM relationship_evidence WHERE relationship_id='${id}'`),'keep this evidence');
+  sql("INSERT INTO entities(name,type,metadata) VALUES('Child','person','{\"qualifier\":\"distinct person\"}')");
+  assert.equal(sql("SELECT count(*) FROM entities WHERE name='Child'"),'2');
+  assert.equal(sql("SELECT count(*) FROM pg_proc WHERE proname IN ('atlas_save_relationship','atlas_set_parents') AND prosecdef"),'0','RPCs must not elevate access');
+  sql(`INSERT INTO entity_relationships(from_entity_id,to_entity_id,type,description,sort_order) VALUES('${b}','${other}','daughter-of','legacy evidence note',9),('${other}','${b}','unusual-custom-label','keep literal text',4)`);
+  sql(readFileSync('supabase/migrations/010_relationship_atlas.sql','utf8'));
+  assert.equal(sql("SELECT definition_id FROM entity_relationships WHERE type='daughter-of'"),'daughter-of');
+  assert.equal(sql("SELECT metadata FROM entity_relationships WHERE type='daughter-of'"),'{}');
+  assert.equal(sql("SELECT sort_order FROM entity_relationships WHERE type='daughter-of'"),'9');
+  assert.equal(sql("SELECT count(*) FROM entity_relationships WHERE type='unusual-custom-label' AND definition_id IS NULL"),'1');
+  sql('GRANT SELECT, INSERT, UPDATE, DELETE ON entities,entity_relationships TO anon');
+  sql(`SET ROLE anon; SELECT atlas_save_relationship(${literal({...draft,from_entity_id:b,to_entity_id:other,type:'served under',evidence:[]})}); RESET ROLE;`);
+  console.log('Local PostgreSQL checks passed: migration, definitions, evidence preservation, idempotent parent writes, cycle rejection, atomic rollback, custom definitions, duplicate/inverse checks, distinct same-name entities, and invoker access.');
+} finally {
+  if(started) run('pg_ctl',['-D',data,'-m','immediate','-w','stop']);
+  rmSync(root,{recursive:true,force:true});
+}

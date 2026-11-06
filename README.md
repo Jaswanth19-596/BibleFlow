@@ -369,3 +369,32 @@ Built for studying and connecting God's Word. 📖✝️
 Apply `supabase/migrations/009_performance.sql` after the existing migrations using the Supabase SQL editor. It adds the batched dashboard count function and indexes for the existing substring search, preserving caller permissions. The application retains a bounded legacy count fallback until the function is available. This migration has not been applied automatically; large existing tables may take time to build their indexes.
 
 Run `node scripts/test-performance.mjs` for worker/map equivalence checks and diagnostic timings against Git HEAD, plus `npm run test:eras`, `npm run lint`, and `npm run build`. See `docs/performance-audit.md` for measurements and validation limits.
+
+### Relationship Atlas and search
+
+Open **People** to switch between **Family view** and **All relationships**. Search names, explicit aliases, relationship labels, notes or attached references such as `2 Sam 21:8`. Select a result to reveal and center it; **Restore view** removes that temporary reveal. Filters do not alter saved records. On phones, open **Filters** to access category/type and related-entity controls.
+
+Use **Add relationship** or drag between cards. Search both endpoints and a suggested/existing label, or type a new label such as “priest of” or “keeper of the gate.” The editor previews direction and supports notes, structured Scripture references, assertion status and relationship period. **Related entities** shows non-person cards; selecting a person can expose their connected entities. Several assertions between the same pair can be expanded from their relationship-count label.
+
+Select a child and choose **Set parents** to add/confirm one or two direct parents together. Exact compatible parent pairs share a branch in Family view. This never implies marriage or concubinage. Existing `son of`/`daughter of` labels need direct-parent confirmation before grouping. Ancestor, adoptive/legal and uncertain assertions keep their context.
+
+**Database rollout:** apply `supabase/migrations/010_relationship_atlas.sql` after migration 009 in the Supabase SQL editor, then reload the Atlas. The user confirmed applying it to the current project. It adds:
+
+- `relationship_definitions`: stable keys, display labels, category, symmetry, optional inverse label and parent direction.
+- `entity_relationships.definition_id` and `metadata`: definition link and optional assertion/period/lineage/parentage context; existing `type`, descriptions and route ordering remain compatible.
+- `relationship_evidence`: relationship ID, canonical book, chapter, start/end verses and explanation, independent of saved topic verses.
+- Invoker functions `atlas_save_relationship`, `atlas_set_parents` and the ancestry-cycle check helper; multi-record saves are transactional.
+- Relevant indexes and realtime publication entries. Existing entity-table access behavior is unchanged.
+
+The migration also removes `entities_name_type_key` so distinct people can share a name. Add a distinguishing description when creating another same-name entity. Records remain linked by UUID. Do not roll this constraint back after creating duplicate-name records without first deliberately resolving those identities. No existing relationship or person is deleted by the migration. Before it is applied, existing relationships can still be read; the new save flow explains the missing update and preserves form input.
+
+Validation:
+
+```bash
+npm run test:relationships
+npm run test:relationships:database
+npm run lint
+npm run build
+```
+
+The database test requires local PostgreSQL commands (`initdb`, `pg_ctl`, `psql`) on PATH. It creates and removes a disposable local database and never connects to the configured Supabase project. For browser checks, run the dev server and open `/scripts/relationship-preview.html`; this in-memory fixture never sends application reads/writes to Supabase. Add `?failSave=1` to simulate save failures. Refresh by reopening the fixture URL; regular `/atlas` uses the real configured project. The fixture is excluded from production output.
