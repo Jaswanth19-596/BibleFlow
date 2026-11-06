@@ -95,7 +95,7 @@ Fixed-size derived React Flow junction for shared parents. Opens its original as
 Provider-wrapped Atlas with Family/All relationships views, searchable entities/types/assertions/references, explicit camera focus, temporary result reveal, category/type/entity/period/status filters, bundles and immediate-neighbor focus. Derives shared-parent branches from confirmed direct assertions, preserves manual positions, and exposes shared editors and timeline controls.
 
 ### src/components/atlas/PersonNode.tsx
-Memoized card for any Atlas entity with type/subtype, qualifier, mentions and keyboard/touch Inspect action; four-sided source/target handles. Exports `PersonNodeData`; management actions live in the Atlas detail panel.
+Memoized card for any Atlas entity with type/subtype, qualifier, mentions and keyboard/touch Inspect action. The card body, name and avatar all allow dragging; a normal click opens details. Four-sided source/target handles. Exports `PersonNodeData`; management actions live in the Atlas detail panel.
 
 ### src/components/atlas/RelationshipEdge.tsx
 Directional/category-styled relationship edge or orthogonal family segment. Exports `RelationshipEdgeData`; supports expanded path offsets, assertion-status dashes, selection and zoom-aware keyboard/touch labels.

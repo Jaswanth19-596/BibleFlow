@@ -47,3 +47,9 @@ The user confirmed application of `supabase/migrations/010_relationship_atlas.sq
 The migration does not delete entities or relationships. It removes blanket `(name,type)` uniqueness to permit distinct same-name people. Reintroducing that constraint after such records have been created requires deliberate identity resolution first. Legacy labels remain unconfirmed for direct-parent grouping until a user reviews them.
 
 Scope does not include automatic fact extraction from Scripture, unrestricted natural-language questions, automatic identity merging, inferred genealogy, automatic whole-canvas rearrangement, or integration of Atlas results into the existing global verse-search page. Custom types can be categorized when created; changing a shared type definition's semantics later is not exposed as a bulk editing UI.
+
+## Card dragging regression fix
+
+The name/avatar Inspect button previously had React Flow's `nodrag` marker, preventing drag starts over most of the card. Cards with a description or qualifier could still be moved from their lower text area, making movement appear inconsistent. The marker is removed from the entity card content; connection handles, edge labels and the derived family junction retain their intentional interaction behavior. Cards now show grab/grabbing cursors and suppress text selection during movement.
+
+Verified against the in-memory browser fixture: reproduced a blocked drag from Saul's name before the fix; after the fix dragged Saul from his name, a qualified Zechariah card from its avatar, and the Israel nation card from its name. All three moved, dragging did not accidentally open details, a normal click still opened details, and saved coordinates survived an entity-query refresh. No user study records were changed during these checks.

@@ -51,8 +51,9 @@
 .atlas-empty h2 { font-size:20px; margin-bottom:8px; }.atlas-empty p { font-size:13px; margin-bottom:16px; }
 .atlas-legend { position:absolute; top:12px; left:14px; display:flex; gap:12px; flex-wrap:wrap; max-width:75%; font-size:10px; color:#5e7186; pointer-events:none; }
 .atlas-legend span { display:flex; align-items:center; gap:4px; }.atlas-legend i { width:13px; height:2px; display:inline-block; }
-.atlas-entity-node { min-width:200px; max-width:270px; border-radius:10px!important; }
-.atlas-node-content { display:flex; align-items:center; gap:10px; max-width:235px; color:inherit; }
+.atlas-entity-node { min-width:200px; max-width:270px; border-radius:10px!important; cursor:grab; user-select:none; }
+.atlas-entity-node:active { cursor:grabbing; }
+.atlas-node-content { display:flex; align-items:center; gap:10px; max-width:235px; color:inherit; cursor:inherit; }
 .atlas-avatar { display:flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; flex-shrink:0; color:white; font-weight:600; }
 .atlas-node-note { font-size:11px; margin-top:6px; max-width:220px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#617489; }
 .atlas-junction { width:28px; height:28px; display:flex; align-items:center; justify-content:center; }
