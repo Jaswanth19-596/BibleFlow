@@ -54,6 +54,7 @@ function Atlas() {
   const [periodEditor, setPeriodEditor] = useState<{ period?: TimelinePeriod } | null>(null);
   const [error, setError] = useState('');
   const [pendingFocus, setPendingFocus] = useState<string[] | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const flow = useReactFlow(); const initialized = useNodesInitialized();
   const byId = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities]);
   const selectedEntity = selectedEntityId ? byId.get(selectedEntityId) : undefined;
@@ -153,7 +154,17 @@ function Atlas() {
   }, [pendingFocus, initialized, nodes, flow]);
   const saveEntity = async (data: AtlasEntityInput) => {
     if (entityEditor?.entity) await atlas.updateEntity(entityEditor.entity.id, data);
-    else await atlas.createEntity({ ...data, timeline_period_id: null, atlas_x: 100, atlas_y: 100 });
+    else {
+      const bounds = canvasRef.current?.getBoundingClientRect();
+      if (!bounds) throw new Error('The atlas canvas is not ready. Please try again.');
+      const center = flow.screenToFlowPosition({ x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }, { snapToGrid: false });
+      // Positions use the card's top-left corner; allow for its typical size.
+      const created = await atlas.createEntity({ ...data, timeline_period_id: null, atlas_x: center.x - 110, atlas_y: center.y - 45 });
+      // Keep the new entity visible even when the current filters exclude it.
+      if (hasFilters || (focus && selectedEntityId) || (created.type !== 'person' && !showRelated)) {
+        setReveal(previous => ({ ids: [...(previous?.ids ?? []), created.id], relationships: previous?.relationships ?? [] }));
+      }
+    }
   };
   const persistDrag = async (_event: unknown, node: Node) => {
     if (!byId.has(node.id)) return;
@@ -181,7 +192,7 @@ function Atlas() {
     {(atlas.error || error) && <div className="atlas-error flex justify-between" role="alert"><span>{error || errorMessage(atlas.error)}</span><button onClick={() => { setError(''); atlas.retry(); }} className="atlas-link">Retry</button></div>}
     {reveal && <div className="atlas-reveal"><span>Selected result is revealed. Your filters are preserved.</span><button className="atlas-link" onClick={() => setReveal(null)}>Restore view</button></div>}
     <div className="atlas-stage">
-      <div className="atlas-canvas">
+      <div className="atlas-canvas" ref={canvasRef}>
         {atlas.loading ? <p className="atlas-empty" role="status">Loading relationships…</p> : <ReactFlow nodes={graph.nodes} edges={graph.edges} onNodesChange={(changes: NodeChange[]) => { const relevant = changes.filter(c => !('id' in c) || !c.id.startsWith('family:')); if (relevant.length) onNodesChange(relevant); }} onNodeDragStop={persistDrag} onConnect={connection => { if (connection.source && connection.target && connection.source !== connection.target && byId.has(connection.source) && byId.has(connection.target)) setEditor({ source: connection.source, target: connection.target }); }} onEdgeClick={(_event, edge) => (edge.data?.onEdit as (() => void) | undefined)?.()} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} deleteKeyCode={null} fitView fitViewOptions={INITIAL_FIT_OPTIONS} minZoom={.1} maxZoom={2} panOnScroll proOptions={{ hideAttribution: true }}>
           <TimelineBands periods={periods} bandWidth={8000} onResizePeriod={(id, height) => { atlas.updatePeriod(id, { band_height: height }).catch(e => setError(errorMessage(e))); }} /><Controls position="bottom-left" />{!selectedEntity && selectedRelationships.length === 0 && <MiniMap position="bottom-right" nodeColor={node => String((node.data.entity as Entity | undefined)?.color ?? '#7c59a4')} />}
         </ReactFlow>}

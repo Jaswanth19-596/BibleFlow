@@ -92,7 +92,7 @@ Searchable labeled native entity selector used in relationship and parent editor
 Fixed-size derived React Flow junction for shared parents. Opens its original assertions; never saves as an entity or receives a timeline assignment.
 
 ### src/components/atlas/PeopleAtlas.tsx
-Provider-wrapped Atlas with Family/All relationships views, searchable entities/types/assertions/references, explicit camera focus, temporary result reveal, category/type/entity/period/status filters, bundles and immediate-neighbor focus. Derives shared-parent branches from confirmed direct assertions, preserves manual positions, and exposes shared editors and timeline controls.
+Provider-wrapped Atlas with Family/All relationships views, searchable entities/types/assertions/references, explicit camera focus, temporary result reveal, category/type/entity/period/status filters, bundles and immediate-neighbor focus. Derives shared-parent branches from confirmed direct assertions, preserves manual positions, and exposes shared editors and timeline controls. New entities spawn at the current canvas viewport center and are temporarily revealed through active filters.
 
 ### src/components/atlas/PersonNode.tsx
 Memoized card for any Atlas entity with type/subtype, qualifier, mentions and keyboard/touch Inspect action. The card body, name and avatar all allow dragging; a normal click opens details. Four-sided source/target handles. Exports `PersonNodeData`; management actions live in the Atlas detail panel.
