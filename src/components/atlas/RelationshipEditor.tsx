@@ -8,8 +8,9 @@ interface Props {
   entities: Entity[]; relationships: EntityRelationship[]; definitions: RelationshipDefinition[]; periods: TimelinePeriod[];
   initial?: EntityRelationship; source?: string; target?: string; onClose: () => void;
   onSave: (draft: RelationshipDraft) => Promise<unknown>; onDelete: (id: string) => Promise<unknown>;
+  onOpenExisting: (relationship: EntityRelationship) => void;
 }
-export default function RelationshipEditor({ entities, relationships, definitions, periods, initial, source, target, onClose, onSave, onDelete }: Props) {
+export default function RelationshipEditor({ entities, relationships, definitions, periods, initial, source, target, onClose, onSave, onDelete, onOpenExisting }: Props) {
   const [from, setFrom] = useState(initial?.from_entity_id ?? source ?? '');
   const [to, setTo] = useState(initial?.to_entity_id ?? target ?? '');
   const [label, setLabel] = useState(initial ? resolveDefinition(initial, definitions).label : '');
@@ -21,20 +22,23 @@ export default function RelationshipEditor({ entities, relationships, definition
   const [notes, setNotes] = useState<Record<string, string>>(Object.fromEntries((initial?.evidence ?? []).map(e => [formatEvidence(e), e.note])));
   const [confirmed, setConfirmed] = useState(initial?.metadata?.lineage_scope === 'direct' && initial.metadata.status === 'explicit');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const listId = useId();
+  const [duplicate, setDuplicate] = useState<EntityRelationship | null>(null);
   const definition = definitions.find(d => normalizeLabel(d.label) === normalizeLabel(label));
   const names = new Map(entities.map(e => [e.id, e.name]));
   const types = [...new Set([...definitions.map(d => d.label), ...relationships.map(r => resolveDefinition(r, definitions).label)])];
   let parsed: ReturnType<typeof parseEvidence> = []; try { parsed = parseEvidence(references); } catch { /* Show validation at save. */ }
   const patchMeta = (patch: RelationshipMetadata) => setMetadata(m => ({ ...m, ...patch }));
   const save = async (event: React.FormEvent) => {
-    event.preventDefault(); setError('');
+    event.preventDefault(); setError(''); setDuplicate(null);
     if (!from || !to || from === to || !label.trim()) { setError('Choose two different entities and a relationship.'); return; }
     if (definition?.parent_direction && metadata.lineage_scope === 'direct' && metadata.status === 'explicit' && !confirmed) { setError('Confirm direct parentage before saving.'); return; }
     try {
       const evidence = parseEvidence(references).map(e => ({ ...e, note: notes[formatEvidence(e)] ?? '' }));
       const draft: RelationshipDraft = { id: initial?.id, from_entity_id: from, to_entity_id: to, type: initial && normalizeLabel(initial.type) === normalizeLabel(label) ? initial.type : label.trim(), description, category: definition?.category ?? category, symmetric: definition?.symmetric ?? symmetric, metadata, evidence };
       const candidate = { ...draft, id: initial?.id ?? '', created_at: '', definition_id: definition?.id };
-      if (relationships.some(r => r.id !== initial?.id && relationshipIdentity(r, definitions) === relationshipIdentity(candidate, definitions))) {
+      const existing = relationships.find(r => r.id !== initial?.id && relationshipIdentity(r, definitions) === relationshipIdentity(candidate, definitions));
+      if (existing) {
+        setDuplicate(existing);
         setError('This assertion is already recorded with the same context. Open it to add evidence, or choose a distinct context.'); return;
       }
       setBusy(true); await onSave(draft); onClose();
@@ -64,7 +68,7 @@ export default function RelationshipEditor({ entities, relationships, definition
         {parsed.map((e, i) => <label key={`${formatEvidence(e)}:${i}`} className="atlas-label">Evidence note · {formatEvidence(e)}<input className="atlas-input mt-1" value={notes[formatEvidence(e)] ?? ''} onChange={event => setNotes(n => ({ ...n, [formatEvidence(e)]: event.target.value }))} placeholder="Optional explanation" /></label>)}
         <label className="atlas-label">Notes<textarea className="atlas-input mt-1" value={description} onChange={e => setDescription(e.target.value)} rows={2} /></label>
       </fieldset>
-      {error && <p role="alert" className="atlas-error">{error}</p>}
+      {error && <div role="alert" className="atlas-error"><p>{error}</p>{duplicate && <button type="button" className="atlas-link mt-2" onClick={() => onOpenExisting(duplicate)}>Open existing relationship</button>}</div>}
       <div className="flex items-center justify-between gap-2">{initial ? <button type="button" className="atlas-link text-red-700" disabled={busy} onClick={remove}>Delete relationship</button> : <span />}<div className="flex gap-2"><button type="button" className="atlas-button" disabled={busy} onClick={onClose}>Cancel</button><button className="atlas-button atlas-primary" disabled={busy}>{busy ? 'Saving…' : 'Save relationship'}</button></div></div>
     </form>
   </Modal>;

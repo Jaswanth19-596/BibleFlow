@@ -38,7 +38,7 @@ function Atlas() {
   const definitions = atlas.definitions ?? BUILTIN_DEFINITIONS;
   const [params] = useSearchParams();
   const [query, setQuery] = useState(''); const debouncedQuery = useDebounce(query, 180);
-  const [view, setView] = useState<'family' | 'relationships'>('family');
+  const [view, setView] = useState<'family' | 'relationships'>('relationships');
   const [category, setCategory] = useState('*'); const [type, setType] = useState('*');
   const [entityType, setEntityType] = useState('*'); const [period, setPeriod] = useState('*');
   const [status, setStatus] = useState('*'); const [includeUndated, setIncludeUndated] = useState(true);
@@ -47,7 +47,8 @@ function Atlas() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [selectedRelationships, setSelectedRelationships] = useState<string[]>([]);
   const [reveal, setReveal] = useState<{ ids: string[]; relationships: string[] } | null>(null);
-  const [expandedPair, setExpandedPair] = useState<string | null>(null);
+  const [expandedPairs, setExpandedPairs] = useState<Set<string>>(() => new Set());
+  const expandPair = useCallback((id: string) => setExpandedPairs(previous => new Set([...previous, id])), []);
   const [editor, setEditor] = useState<{ initial?: EntityRelationship; source?: string; target?: string } | null>(null);
   const [entityEditor, setEntityEditor] = useState<{ entity?: Entity } | null>(null);
   const [parentsChild, setParentsChild] = useState<Entity | null>(null);
@@ -126,8 +127,8 @@ function Atlas() {
       family.relationshipIds.forEach(id => grouped.add(id));
     }
     for (const bundle of bundleRelationships(visibleRelationships.filter(r => !grouped.has(r.id)))) {
-      if (bundle.items.length > 1 && expandedPair !== bundle.id) {
-        const r = bundle.items[0]; edges.push({ id: `bundle:${encodeURIComponent(bundle.id)}`, source: r.from_entity_id, target: r.to_entity_id, ...handles(r.from_entity_id, r.to_entity_id), type: 'relationship', data: { label: `${bundle.items.length} relationships`, onEdit: () => { setExpandedPair(bundle.id); openRelationships(bundle.items.map(r => r.id)); } } }); continue;
+      if (bundle.items.length > 1 && !expandedPairs.has(bundle.id)) {
+        const r = bundle.items[0]; edges.push({ id: `bundle:${encodeURIComponent(bundle.id)}`, source: r.from_entity_id, target: r.to_entity_id, ...handles(r.from_entity_id, r.to_entity_id), type: 'relationship', data: { label: `${bundle.items.length} relationships`, onEdit: () => { expandPair(bundle.id); openRelationships(bundle.items.map(r => r.id)); } } }); continue;
       }
       bundle.items.forEach((r, i) => {
         const def = resolveDefinition(r, definitions), color = RELATIONSHIP_CATEGORIES[def.category].color;
@@ -136,14 +137,14 @@ function Atlas() {
       });
     }
     return { nodes: [...nodes, ...familyNodes], edges };
-  }, [nodes, families, periods, openRelationships, visibleRelationships, definitions, expandedPair, selectedRelationships]);
+  }, [nodes, families, periods, openRelationships, visibleRelationships, definitions, expandedPairs, expandPair, selectedRelationships]);
   const selectResult = useCallback((item: AtlasSearchItem) => {
     if (item.kind === 'Relationship type') { setType(item.type ?? '*'); setView('relationships'); setCategory('*'); return; }
     setReveal({ ids: item.entityIds, relationships: item.relationshipId ? [item.relationshipId] : EMPTY_IDS });
     setPendingFocus(item.entityIds);
-    if (item.relationshipId) { const rel = relationships.find(r => r.id === item.relationshipId); if (rel) setExpandedPair(pairKey(rel.from_entity_id, rel.to_entity_id)); openRelationships([item.relationshipId]); }
+    if (item.relationshipId) { const rel = relationships.find(r => r.id === item.relationshipId); if (rel) expandPair(pairKey(rel.from_entity_id, rel.to_entity_id)); openRelationships([item.relationshipId]); }
     else { setSelectedEntityId(item.entityIds[0]); setSelectedRelationships([]); }
-  }, [relationships, openRelationships]);
+  }, [relationships, openRelationships, expandPair]);
   const handledHighlight = useRef<string | null>(null);
   const highlight = params.get('highlight');
   useEffect(() => { if (!highlight) handledHighlight.current = null; if (highlight && handledHighlight.current !== highlight && byId.has(highlight)) { handledHighlight.current = highlight; setReveal({ ids: [highlight], relationships: [] }); setSelectedEntityId(highlight); setPendingFocus([highlight]); } }, [highlight, byId]);
@@ -202,12 +203,23 @@ function Atlas() {
       {(selectedEntity || selectedRelationships.length > 0) && <aside className="atlas-details" aria-label="Relationship details">
         <div className="flex items-start justify-between gap-2"><div><h2>{selectedEntity?.name ?? 'Relationship details'}</h2>{selectedEntity && <p className="atlas-help">{entityQualifier(selectedEntity)}</p>}</div><button className="atlas-button" aria-label="Close relationship details" onClick={() => { setSelectedEntityId(null); setSelectedRelationships([]); setFocus(false); }}>×</button></div>
         {selectedEntity && <><div className="flex flex-wrap gap-2 mt-3"><button className="atlas-button" onClick={() => setEditor({ source: selectedEntity.id })}>Add relationship</button>{selectedEntity.type === 'person' && <button className="atlas-button" onClick={() => setParentsChild(selectedEntity)}>Set parents</button>}<button className="atlas-button" onClick={() => setEntityEditor({ entity: selectedEntity })}>Edit entity</button></div><label className="atlas-check my-3"><input type="checkbox" checked={focus} onChange={e => setFocus(e.target.checked)} />Focus on immediate connections</label>{selectedEntity.description && <p className="text-sm my-3">{selectedEntity.description}</p>}</>}
-        {expandedPair && <button className="atlas-link mt-3" onClick={() => setExpandedPair(null)}>Collapse connection labels</button>}<p className="atlas-help mt-4">{selectedItems.length} recorded {selectedItems.length === 1 ? 'relationship' : 'relationships'}</p>
+        {expandedPairs.size > 0 && <button className="atlas-link mt-3" onClick={() => setExpandedPairs(new Set())}>Collapse connection labels</button>}<p className="atlas-help mt-4">{selectedItems.length} recorded {selectedItems.length === 1 ? 'relationship' : 'relationships'}</p>
         <div className="atlas-assertions">{selectedItems.map(r => <article key={r.id}><button className="atlas-statement-button" onClick={() => selectResult({ id: r.id, kind: 'Relationship', title: '', detail: '', text: '', names: [], entityIds: [r.from_entity_id, r.to_entity_id], relationshipId: r.id })}>{statement(r, byId, definitions)}</button><p className="atlas-help">{r.metadata?.status ?? 'unspecified'} · {r.metadata?.period_id ? periods.find(p => p.id === r.metadata?.period_id)?.name ?? 'Period removed' : 'Undated'}{r.metadata?.lineage_scope ? ` · ${r.metadata.lineage_scope}` : ''}{r.metadata?.parentage ? ` · ${r.metadata.parentage}` : ''}{!visibleRelationships.some(v => v.id === r.id) ? ' · hidden in current view' : ''}</p>{r.description && <p className="text-sm my-2">{r.description}</p>}{(r.evidence ?? []).map((e, i) => <p className="atlas-evidence" key={e.id ?? i}>{formatEvidence(e)}{e.note ? ` — ${e.note}` : ''}</p>)}<button className="atlas-link mt-2" onClick={() => setEditor({ initial: r })}>Edit relationship & evidence</button></article>)}</div>
         {selectedEntity && <button className="atlas-link mt-5 text-red-700" onClick={async () => { if (!window.confirm(`Delete ${selectedEntity.name} and all their tags and relationships?`)) return; try { await atlas.deleteEntity(selectedEntity.id); setSelectedEntityId(null); } catch (e) { setError(errorMessage(e)); } }}>Delete entity</button>}
       </aside>}
     </div>
-    {editor && <RelationshipEditor key={editor.initial?.id ?? `${editor.source}:${editor.target}`} entities={entities} relationships={relationships} definitions={definitions} periods={periods} {...editor} onClose={() => setEditor(null)} onSave={async draft => { const id = await atlas.saveRelationship(draft); const ids = [draft.from_entity_id, draft.to_entity_id]; setReveal({ ids, relationships: [id] }); setPendingFocus(ids); setSelectedEntityId(null); setSelectedRelationships([id]); setExpandedPair(pairKey(draft.from_entity_id, draft.to_entity_id)); }} onDelete={atlas.deleteRelationship} />}
+    {editor && <RelationshipEditor key={editor.initial?.id ?? `${editor.source}:${editor.target}`} entities={entities} relationships={relationships} definitions={definitions} periods={periods} {...editor} onClose={() => setEditor(null)} onSave={async draft => {
+      const id = await atlas.saveRelationship(draft);
+      const ids = [draft.from_entity_id, draft.to_entity_id];
+      // Family view hides role assertions; do not leave a saved role as its only exception.
+      if (draft.category !== 'family') setView('relationships');
+      setReveal(previous => ({
+        ids: [...new Set([...(previous?.ids ?? []), ...ids])],
+        relationships: [...new Set([...(previous?.relationships ?? []), id])],
+      }));
+      setPendingFocus(ids); setSelectedEntityId(null); setSelectedRelationships([id]);
+      expandPair(pairKey(draft.from_entity_id, draft.to_entity_id));
+    }} onDelete={atlas.deleteRelationship} onOpenExisting={relationship => { setEditor({ initial: relationship }); selectResult({ id: relationship.id, kind: 'Relationship', title: '', detail: '', text: '', names: [], entityIds: [relationship.from_entity_id, relationship.to_entity_id], relationshipId: relationship.id }); }} />}
     {parentsChild && <SetParentsModal child={parentsChild} entities={entities} periods={periods} onClose={() => setParentsChild(null)} onSave={atlas.setParents} />}
     <CreatePersonModal open={!!entityEditor} editingPerson={entityEditor?.entity} entities={entities} onClose={() => setEntityEditor(null)} onSubmit={saveEntity} />
     <CreatePeriodModal key={periodEditor?.period?.id ?? (periodEditor ? 'new-open' : 'closed')} open={!!periodEditor} editingPeriod={periodEditor?.period} onClose={() => setPeriodEditor(null)} nextSortOrder={periods.length} allPeriods={periods} onSubmit={async data => { if (periodEditor?.period) await atlas.updatePeriod(periodEditor.period.id, data); else await atlas.createPeriod({ ...data, band_height: 300 }); }} onDelete={atlas.deletePeriod} onReorder={atlas.reorderPeriods} />
